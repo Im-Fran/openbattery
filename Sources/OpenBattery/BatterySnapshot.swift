@@ -75,6 +75,14 @@ struct BatterySnapshot: Equatable {
         isCharging ? timeToFull : timeToEmpty
     }
 
+    /// Compact wording for the menu bar, where every character costs space.
+    var shortStatusText: String {
+        guard isPresent else { return "No battery" }
+        if isCharging { return "Charging" }
+        if isFullyCharged && isPluggedIn { return "Full" }
+        return isPluggedIn ? "AC" : "Battery"
+    }
+
     var statusText: String {
         guard isPresent else { return "No battery" }
         if isCharging, let minutes = timeToFull {

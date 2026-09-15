@@ -5,7 +5,8 @@ struct PopoverView: View {
     @EnvironmentObject private var monitor: BatteryMonitor
     @Environment(\.openWindow) private var openWindow
 
-    @AppStorage("menuBarDisplay") private var display = MenuBarDisplay.percentage.rawValue
+    @AppStorage(MenuBarConfig.itemsKey) private var rawItems = MenuBarConfig.default.rawItems
+    @AppStorage(MenuBarConfig.iconKey) private var showsIcon = MenuBarConfig.default.showsIcon
     @State private var settingsError: String?
 
     private var snapshot: BatterySnapshot { monitor.snapshot }
@@ -84,11 +85,7 @@ struct PopoverView: View {
 
     private var settingsMenu: some View {
         Menu {
-            Picker("Menu bar", selection: $display) {
-                ForEach(MenuBarDisplay.allCases) { option in
-                    Text(option.title).tag(option.rawValue)
-                }
-            }
+            Menu("Menu Bar") { menuBarOptions }
             Toggle("Launch at login", isOn: Binding(get: { launchesAtLogin },
                                                     set: setLaunchAtLogin(_:)))
         } label: {
@@ -97,6 +94,31 @@ struct PopoverView: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
+    }
+
+    @ViewBuilder
+    private var menuBarOptions: some View {
+        Toggle("Battery icon", isOn: Binding(get: { config.effectiveShowsIcon },
+                                             set: { showsIcon = $0 }))
+        // The icon is forced back on when nothing else is left to show, so the
+        // toggle says what is really happening.
+        .disabled(config.items.isEmpty)
+        Divider()
+        ForEach(MenuBarItem.allCases) { item in
+            Toggle(item.title, isOn: Binding(get: { config.contains(item) },
+                                             set: { _ in apply(config.toggling(item)) }))
+        }
+    }
+
+    // MARK: - Menu bar configuration
+
+    private var config: MenuBarConfig {
+        MenuBarConfig(showsIcon: showsIcon, rawItems: rawItems)
+    }
+
+    private func apply(_ config: MenuBarConfig) {
+        rawItems = config.rawItems
+        showsIcon = config.effectiveShowsIcon
     }
 
     // MARK: - Login item

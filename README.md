@@ -21,8 +21,8 @@ IORegistry, and none of it is visible without digging.
 
 OpenBattery surfaces that data in the menu bar. It is a SwiftUI app with no
 dock icon, no dependencies and no background polling loop — IOKit wakes it when
-the power source changes, and the expensive reads only happen while a window is
-open. It idles at about **18 MB** of memory and **0 % CPU**.
+the power source changes, and the expensive reads only run when something on
+screen actually needs them. It idles at about **18 MB** of memory and **0 % CPU**.
 
 Everything comes straight from `AppleSmartBattery` and `AppleSmartBatteryPack`
 via IOKit: no root, no privileged helper, no shelling out to `ioreg` or
@@ -33,12 +33,27 @@ which macOS now handles itself (see [below](#-how-the-charge-limit-works)).
 
 ## ✨ Features
 
-- **Menu bar** — charge percentage, time remaining, or icon only.
+- **Configurable menu bar** — show or hide the battery icon, and pick which
+  fields sit next to it: percentage, time remaining, charging status, battery
+  watts, adapter watts, system watts, charge in mAh, temperature. Set it up
+  under the gear button → **Menu Bar**.
 - **Popover** — charge in % and mAh, time to full or empty, adapter input,
   battery flow and system load in watts, temperature, and Low Power Mode.
 - **Battery Info window** — the full picture, grouped for reading.
 - **Charge limit guide** — one click to macOS's own Charge Limit setting.
 - **Launch at login** — via `SMAppService`, toggled from the popover.
+
+Fields are joined with a separator in a fixed order, so the layout stays
+predictable no matter which order you switch them on:
+
+```
+🔋 97% · +8.6 W · 4,991 mAh
+```
+
+Anything that is not available right now is skipped rather than shown as a dash —
+an unplugged Mac has no adapter watts. Picking watts, mAh or temperature makes
+the app read the detailed battery data on a 10 second timer (about 0.2 % CPU);
+percentage, time remaining and charging status stay free.
 
 What the Battery Info window shows:
 
@@ -174,8 +189,9 @@ Sources/OpenBattery/
   BatterySnapshot.swift         one immutable reading, plus derived values
   BatteryMonitor.swift          IOKit notifications, refresh policy
   Formatting.swift              display formatting
+  MenuBarConfig.swift           which fields the menu bar shows
   Views/                        menu bar label, popover, info window
-Tests/BatteryDecodingTests.swift
+Tests/                          decoding and menu bar configuration
 ```
 
 ---

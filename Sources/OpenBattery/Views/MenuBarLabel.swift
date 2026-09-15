@@ -1,42 +1,25 @@
 import SwiftUI
 
-enum MenuBarDisplay: String, CaseIterable, Identifiable {
-    case percentage
-    case timeRemaining
-    case iconOnly
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .percentage: return "Percentage"
-        case .timeRemaining: return "Time remaining"
-        case .iconOnly: return "Icon only"
-        }
-    }
-}
-
-/// Icon plus optional text. Rendered on every battery change, so it stays cheap.
+/// Icon plus whichever fields the user picked. Rendered on every battery
+/// change, so it stays cheap.
 struct MenuBarLabel: View {
     let snapshot: BatterySnapshot
-    @AppStorage("menuBarDisplay") private var display = MenuBarDisplay.percentage.rawValue
+
+    @AppStorage(MenuBarConfig.itemsKey) private var rawItems = MenuBarConfig.default.rawItems
+    @AppStorage(MenuBarConfig.iconKey) private var showsIcon = MenuBarConfig.default.showsIcon
+
+    private var config: MenuBarConfig {
+        MenuBarConfig(showsIcon: showsIcon, rawItems: rawItems)
+    }
 
     var body: some View {
         HStack(spacing: 3) {
-            Image(systemName: symbolName)
-            if let text { Text(text) }
-        }
-    }
-
-    private var text: String? {
-        switch MenuBarDisplay(rawValue: display) ?? .percentage {
-        case .percentage:
-            return "\(snapshot.percentage)%"
-        case .timeRemaining:
-            guard let minutes = snapshot.remainingMinutes else { return "\(snapshot.percentage)%" }
-            return BatteryDecoding.formatDuration(minutes: minutes)
-        case .iconOnly:
-            return nil
+            if config.effectiveShowsIcon {
+                Image(systemName: symbolName)
+            }
+            if let text = config.text(for: snapshot) {
+                Text(text)
+            }
         }
     }
 

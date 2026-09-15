@@ -40,6 +40,9 @@ targets:
     sources:
       - Tests
       - path: Sources/OpenBattery/BatteryDecoding.swift
+      - path: Sources/OpenBattery/BatterySnapshot.swift
+      - path: Sources/OpenBattery/Formatting.swift
+      - path: Sources/OpenBattery/MenuBarConfig.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.imfran.openbattery.tests
