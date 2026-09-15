@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcodegen --version
+
+      # No signing certificate exists on the runner, so signing is switched off.
+      # Everything else matches what `make test` and `make build` do locally.
+      - name: Test
+        run: make test XCODEBUILD_FLAGS='CODE_SIGNING_ALLOWED=NO'
+
+      - name: Build (Release)
+        run: make build XCODEBUILD_FLAGS='CODE_SIGNING_ALLOWED=NO'

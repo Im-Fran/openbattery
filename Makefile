@@ -5,6 +5,9 @@ CONFIG       ?= Release
 BUILD_DIR    := build
 APP          := $(BUILD_DIR)/$(CONFIG)/OpenBattery.app
 INSTALL_DIR  ?= /Applications
+# Extra settings passed to xcodebuild, e.g. CODE_SIGNING_ALLOWED=NO on CI where
+# no signing certificate exists.
+XCODEBUILD_FLAGS ?=
 
 .PHONY: all project build test run install uninstall clean
 
@@ -20,12 +23,12 @@ $(PROJECT): project.yml
 ## Build and sign the app
 build: $(PROJECT)
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration $(CONFIG) \
-		SYMROOT=$(BUILD_DIR) build
+		SYMROOT=$(BUILD_DIR) $(XCODEBUILD_FLAGS) build
 
 ## Run the unit tests
 test: $(PROJECT)
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration Debug \
-		SYMROOT=$(BUILD_DIR) test
+		SYMROOT=$(BUILD_DIR) $(XCODEBUILD_FLAGS) test
 
 ## Build, then (re)launch the menu bar app
 run: build

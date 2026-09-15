@@ -4,9 +4,10 @@
 
 **A native macOS menu bar app that shows what your battery is actually doing.**
 
+[![CI](https://img.shields.io/github/actions/workflow/status/Im-Fran/openbattery/ci.yml?branch=main&label=CI)](https://github.com/Im-Fran/openbattery/actions/workflows/ci.yml)
 [![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5-orange)](https://swift.org)
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![License](https://img.shields.io/github/license/Im-Fran/openbattery)](LICENSE)
 
 </div>
 
@@ -132,6 +133,13 @@ make install    # copy to /Applications and launch
 make test       # unit tests for the raw-value decoding
 make uninstall  # remove the app from /Applications
 make clean      # drop build/ and the generated Xcode project
+```
+
+Every target accepts `XCODEBUILD_FLAGS` for extra `xcodebuild` settings — that is
+how CI builds without a signing certificate:
+
+```bash
+make test XCODEBUILD_FLAGS='CODE_SIGNING_ALLOWED=NO'
 ```
 
 `make` regenerates `OpenBattery.xcodeproj` from `project.yml` whenever that file
