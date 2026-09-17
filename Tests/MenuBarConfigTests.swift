@@ -23,10 +23,11 @@ final class MenuBarConfigTests: XCTestCase {
         XCTAssertEqual(config.items, [.percentage])
     }
 
-    func testItemsKeepDeclarationOrderRegardlessOfToggleOrder() {
-        let config = MenuBarConfig(showsIcon: true, items: [.temperature, .percentage, .batteryWatts])
-        XCTAssertEqual(config.items, [.percentage, .batteryWatts, .temperature])
-        XCTAssertEqual(config.rawItems, "percentage,batteryWatts,temperature")
+    func testItemsKeepTheUserOrderWithoutDuplicates() {
+        let config = MenuBarConfig(showsIcon: true,
+                                   items: [.temperature, .percentage, .temperature, .batteryWatts])
+        XCTAssertEqual(config.items, [.temperature, .percentage, .batteryWatts])
+        XCTAssertEqual(config.rawItems, "temperature,percentage,batteryWatts")
     }
 
     func testRawItemsRoundTripAndIgnoresUnknownValues() {
@@ -36,12 +37,26 @@ final class MenuBarConfigTests: XCTestCase {
                        [.percentage])
     }
 
-    func testTogglingAddsAndRemoves() {
+    func testInsertingAddsMovesAndRemoves() {
         var config = MenuBarConfig(showsIcon: true, items: [.percentage])
-        config = config.toggling(.systemWatts)
+        config = config.inserting(.systemWatts, before: nil)
         XCTAssertEqual(config.items, [.percentage, .systemWatts])
-        config = config.toggling(.percentage)
-        XCTAssertEqual(config.items, [.systemWatts])
+        config = config.inserting(.temperature, before: .percentage)
+        XCTAssertEqual(config.items, [.temperature, .percentage, .systemWatts])
+        config = config.inserting(.systemWatts, before: .percentage)
+        XCTAssertEqual(config.items, [.temperature, .systemWatts, .percentage])
+        XCTAssertEqual(config.inserting(.percentage, before: .percentage), config,
+                       "dropping a field onto itself leaves it where it is")
+        config = config.removing(.temperature)
+        XCTAssertEqual(config.items, [.systemWatts, .percentage])
+    }
+
+    func testMovingIsClampedToTheEnds() {
+        let config = MenuBarConfig(showsIcon: true, items: [.percentage, .batteryWatts, .temperature])
+        XCTAssertEqual(config.moving(.batteryWatts, by: 1).items, [.percentage, .temperature, .batteryWatts])
+        XCTAssertEqual(config.moving(.percentage, by: -1), config)
+        XCTAssertEqual(config.moving(.temperature, by: 1), config)
+        XCTAssertEqual(config.moving(.capacity, by: 1), config)
     }
 
     func testIconComesBackWhenNothingElseWouldBeVisible() {

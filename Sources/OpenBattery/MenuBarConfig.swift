@@ -76,9 +76,10 @@ struct MenuBarConfig: Equatable {
 
     init(showsIcon: Bool, items: [MenuBarItem]) {
         self.showsIcon = showsIcon
-        // Kept in declaration order so the menu bar layout is predictable no
-        // matter in which order the fields were switched on.
-        self.items = MenuBarItem.allCases.filter(items.contains)
+        // The user's order is the menu bar order; a duplicate would show the
+        // same value twice.
+        var seen = Set<MenuBarItem>()
+        self.items = items.filter { seen.insert($0).inserted }
     }
 
     init(showsIcon: Bool, rawItems: String) {
@@ -113,8 +114,25 @@ struct MenuBarConfig: Equatable {
 
     func contains(_ item: MenuBarItem) -> Bool { items.contains(item) }
 
-    func toggling(_ item: MenuBarItem) -> MenuBarConfig {
-        MenuBarConfig(showsIcon: showsIcon,
-                      items: contains(item) ? items.filter { $0 != item } : items + [item])
+    /// Adds `item`, or moves it if already shown, so it sits right before
+    /// `target` — or at the end when there is no target.
+    func inserting(_ item: MenuBarItem, before target: MenuBarItem?) -> MenuBarConfig {
+        // Dropping a field onto itself must not send it to the end.
+        guard item != target else { return self }
+        var rest = items.filter { $0 != item }
+        rest.insert(item, at: target.flatMap(rest.firstIndex(of:)) ?? rest.endIndex)
+        return MenuBarConfig(showsIcon: showsIcon, items: rest)
+    }
+
+    func moving(_ item: MenuBarItem, by offset: Int) -> MenuBarConfig {
+        guard let index = items.firstIndex(of: item) else { return self }
+        var rest = items
+        rest.remove(at: index)
+        rest.insert(item, at: min(max(index + offset, 0), rest.count))
+        return MenuBarConfig(showsIcon: showsIcon, items: rest)
+    }
+
+    func removing(_ item: MenuBarItem) -> MenuBarConfig {
+        MenuBarConfig(showsIcon: showsIcon, items: items.filter { $0 != item })
     }
 }
