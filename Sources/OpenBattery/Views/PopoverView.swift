@@ -85,9 +85,11 @@ struct PopoverView: View {
                 NSApp.activate(ignoringOtherApps: true)
                 openWindow(id: BatteryInfoView.windowID)
             }
+            .keyboardShortcut("i")
             Spacer()
             settingsMenu
-            Button("Quit") { NSApp.terminate(nil) }
+            Button("Quit OpenBattery") { NSApp.terminate(nil) }
+                .keyboardShortcut("q")
         }
         .controlSize(.small)
     }
