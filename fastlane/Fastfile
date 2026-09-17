@@ -1,0 +1,46 @@
+# OpenBattery — build and test the macOS menu bar app.
+#
+# The Xcode project is generated from project.yml by XcodeGen and is not
+# committed, so every lane regenerates it first.
+# Pass signed:false where no signing certificate exists (CI).
+
+ROOT = File.expand_path("..", __dir__)
+PROJECT = "OpenBattery.xcodeproj"
+SCHEME = "OpenBattery"
+BUILD_DIR = "build"
+
+default_platform(:mac)
+
+platform :mac do
+  before_all do
+    sh("xcodegen", "generate", "--spec", "#{ROOT}/project.yml", "--project", ROOT)
+  end
+
+  desc "Run the unit tests"
+  lane :test do |options|
+    run_tests(
+      project: PROJECT,
+      scheme: SCHEME,
+      configuration: "Debug",
+      derived_data_path: "#{BUILD_DIR}/DerivedData",
+      output_directory: "#{BUILD_DIR}/test_output",
+      output_types: "junit",
+      xcargs: options[:signed] == false ? "CODE_SIGNING_ALLOWED=NO" : nil
+    )
+  end
+
+  desc "Build a Release OpenBattery.app into build/"
+  lane :build do |options|
+    build_mac_app(
+      project: PROJECT,
+      scheme: SCHEME,
+      configuration: "Release",
+      export_method: "mac-application",
+      skip_package_pkg: true,
+      skip_codesigning: options[:signed] == false,
+      derived_data_path: "#{BUILD_DIR}/DerivedData",
+      output_directory: BUILD_DIR,
+      archive_path: "#{BUILD_DIR}/OpenBattery.xcarchive"
+    )
+  end
+end

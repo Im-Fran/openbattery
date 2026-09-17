@@ -145,6 +145,25 @@ make test XCODEBUILD_FLAGS='CODE_SIGNING_ALLOWED=NO'
 `make` regenerates `OpenBattery.xcodeproj` from `project.yml` whenever that file
 changes, so the project is never committed.
 
+### With fastlane
+
+The same build and test runs are also available as fastlane lanes, which is the
+route to take for release automation (archiving, notarizing, uploading):
+
+```bash
+bundle install                      # once, installs fastlane
+
+bundle exec fastlane build          # Release archive → build/OpenBattery.app
+bundle exec fastlane test           # unit tests, JUnit report in build/test_output
+```
+
+Both lanes regenerate the Xcode project first, and both take `signed:false`
+where no signing certificate exists:
+
+```bash
+bundle exec fastlane build signed:false
+```
+
 ---
 
 ## 🔌 How the charge limit works
