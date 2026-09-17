@@ -16,7 +16,8 @@ struct ChargeLimitSection: View {
                 Text("macOS can cap charging at 80, 85, 90 or 95%.")
                     .foregroundStyle(.secondary)
                 step(1, "Open Battery settings.")
-                step(2, "Click the ⓘ button next to **Charging**.")
+                // The symbol, unlike a "ⓘ" glyph, is spoken by VoiceOver as "Info".
+                step(2, "Click the \(Image(systemName: "info.circle")) button next to **Charging**.")
                 step(3, "Drag **Charge Limit** to the percentage you want.")
                 Button("Open Battery Settings") {
                     NSWorkspace.shared.open(Self.settingsURL)
@@ -32,10 +33,10 @@ struct ChargeLimitSection: View {
         }
     }
 
-    private func step(_ number: Int, _ text: String) -> some View {
+    private func step(_ number: Int, _ text: LocalizedStringKey) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text("\(number).").monospacedDigit().foregroundStyle(.secondary)
-            Text(.init(text))
+            Text(text)
         }
     }
 }
