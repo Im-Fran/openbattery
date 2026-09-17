@@ -24,7 +24,7 @@ struct ChargeLimitSection: View {
                 .controlSize(.small)
                 .padding(.top, 2)
             }
-            .font(.caption)
+            .font(.callout)
             .padding(.top, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
         } label: {
