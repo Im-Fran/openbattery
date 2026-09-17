@@ -79,7 +79,7 @@ private struct GeneralSettingsPane: View {
                 Text("OpenBattery").font(.title2.weight(.semibold))
                 Text("See what your battery is actually doing, straight from the menu bar.")
                     .foregroundStyle(.secondary)
-                Text("© 2026 Francisco Solis")
+                Text("© 2026 FranciscoSolis E.I.R.L. · RUT 78.473.345-9")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
