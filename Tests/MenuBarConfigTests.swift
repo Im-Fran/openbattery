@@ -50,6 +50,14 @@ final class MenuBarConfigTests: XCTestCase {
         XCTAssertFalse(MenuBarConfig(showsIcon: false, items: [.percentage]).effectiveShowsIcon)
     }
 
+    func testNoBatteryShowsNoPercentageButKeepsTheIcon() {
+        let desktop = BatterySnapshot()
+        let config = MenuBarConfig(showsIcon: false, items: [.percentage])
+        XCTAssertNil(config.text(for: desktop), "a missing battery is not 0%")
+        XCTAssertTrue(config.showsIcon(for: desktop))
+        XCTAssertFalse(config.showsIcon(for: snapshot()))
+    }
+
     func testOnlySomeFieldsNeedTheExpensiveRead() {
         XCTAssertFalse(MenuBarConfig(showsIcon: true,
                                      items: [.percentage, .timeRemaining, .chargingStatus])

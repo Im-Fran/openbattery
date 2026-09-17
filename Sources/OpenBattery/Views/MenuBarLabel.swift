@@ -14,7 +14,7 @@ struct MenuBarLabel: View {
 
     var body: some View {
         HStack(spacing: 3) {
-            if config.effectiveShowsIcon {
+            if config.showsIcon(for: snapshot) {
                 Image(systemName: symbolName)
             }
             if let text = config.text(for: snapshot) {
@@ -25,6 +25,8 @@ struct MenuBarLabel: View {
 
     /// SF Symbols that exist all the way back to macOS 11.
     private var symbolName: String {
+        // No battery means mains power; `powerplug` would need macOS 12.
+        guard snapshot.isPresent else { return "bolt.horizontal" }
         if snapshot.isCharging || (snapshot.isPluggedIn && snapshot.isFullyCharged) {
             return "battery.100.bolt"
         }

@@ -43,7 +43,8 @@ enum MenuBarItem: String, CaseIterable, Identifiable {
     func text(for snapshot: BatterySnapshot) -> String? {
         switch self {
         case .percentage:
-            return "\(snapshot.percentage)%"
+            // Without a battery the reader leaves 0 behind, which is not a charge.
+            return snapshot.isPresent ? "\(snapshot.percentage)%" : nil
         case .timeRemaining:
             return snapshot.remainingMinutes.map { BatteryDecoding.formatDuration(minutes: $0) }
         case .chargingStatus:
@@ -98,6 +99,12 @@ struct MenuBarConfig: Equatable {
     /// Hiding the icon *and* every field would leave an invisible menu bar item
     /// that cannot be clicked again, so the icon comes back on its own.
     var effectiveShowsIcon: Bool { showsIcon || items.isEmpty }
+
+    /// Same rule at render time: fields can all be unavailable (no battery,
+    /// unplugged), and the item must still be clickable.
+    func showsIcon(for snapshot: BatterySnapshot) -> Bool {
+        effectiveShowsIcon || text(for: snapshot) == nil
+    }
 
     func text(for snapshot: BatterySnapshot) -> String? {
         let parts = items.compactMap { $0.text(for: snapshot) }
