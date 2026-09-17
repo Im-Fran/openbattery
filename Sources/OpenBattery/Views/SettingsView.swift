@@ -129,6 +129,8 @@ private struct MenuBarSettingsPane: View {
     @State private var dropTarget: MenuBarItem?
     @State private var isFieldTargeted = false
     @State private var isPaletteTargeted = false
+    /// The token whose actions are on screen, for the click and keyboard paths.
+    @State private var actionsTarget: MenuBarItem?
 
     private var config: MenuBarConfig { MenuBarConfig(showsIcon: showsIcon, rawItems: rawItems) }
     private var available: [MenuBarItem] { MenuBarItem.allCases.filter { !config.contains($0) } }
@@ -145,7 +147,7 @@ private struct MenuBarSettingsPane: View {
             } header: {
                 Text("Menu Bar")
             } footer: {
-                Text("Drag items to reorder them. Drag an item out of the field to remove it.")
+                Text("Drag items to reorder them, or click an item to move or remove it.")
             }
 
             Section {
@@ -201,7 +203,22 @@ private struct MenuBarSettingsPane: View {
     }
 
     private func fieldToken(_ item: MenuBarItem) -> some View {
-        Token(item: item)
+        // A Button, not a bare view: only a control joins the key view loop, so
+        // Full Keyboard Access reaches the same actions the drag offers. It has
+        // to be a Button and not a Menu — a menu tracks on mouse-down and eats
+        // the drag, while a button tracks on mouse-up, as the palette shows.
+        Button { actionsTarget = item } label: { Token(item: item) }
+            .buttonStyle(.plain)
+            // Bound per item: every token carries this modifier, so a shared
+            // binding would let the wrong one host the popover.
+            .popover(item: Binding(get: { actionsTarget == item ? item : nil },
+                                   set: { actionsTarget = $0 })) { target in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(target.title).font(.headline)
+                    tokenActions(target)
+                }
+                .padding(8)
+            }
             .overlay(alignment: .leading) { caret(visible: dropTarget == item) }
             .draggable(item.rawValue) { Token(item: item) }
             .dropDestination(for: String.self) { strings, _ in
@@ -234,6 +251,13 @@ private struct MenuBarSettingsPane: View {
             .disabled(config.items.last == item)
         Divider()
         Button("Remove") { apply(config.removing(item)) }
+    }
+
+    /// Applies a change and closes the popover, if that is where it came from.
+    private func apply(_ config: MenuBarConfig) {
+        actionsTarget = nil
+        rawItems = config.rawItems
+        showsIcon = config.effectiveShowsIcon
     }
 
     // MARK: Palette
@@ -277,11 +301,6 @@ private struct MenuBarSettingsPane: View {
             apply(dropped.reduce(config) { $0.inserting($1, before: target) })
         }
         return true
-    }
-
-    private func apply(_ config: MenuBarConfig) {
-        rawItems = config.rawItems
-        showsIcon = config.effectiveShowsIcon
     }
 }
 
