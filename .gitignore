@@ -3,3 +3,4 @@ DerivedData/
 OpenBattery.xcodeproj/
 .DS_Store
 *.xcuserdatad
+.build/
