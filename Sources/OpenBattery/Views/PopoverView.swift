@@ -39,7 +39,7 @@ struct PopoverView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text(snapshot.isPresent ? "\(snapshot.percentage)%" : "—")
-                .font(.system(size: 30, weight: .medium, design: .rounded))
+                .font(.system(.largeTitle, design: .rounded).weight(.medium))
                 .monospacedDigit()
             VStack(alignment: .leading, spacing: 2) {
                 Text(snapshot.statusText)
