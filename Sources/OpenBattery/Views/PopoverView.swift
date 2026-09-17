@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PopoverView: View {
     @EnvironmentObject private var monitor: BatteryMonitor
+    @EnvironmentObject private var caffeine: CaffeineController
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
 
@@ -24,6 +25,10 @@ struct PopoverView: View {
             ChargeLimitSection()
             .padding(.horizontal, Self.inset)
             .padding(.vertical, 8)
+            separator
+            keepAwake
+                .padding(.horizontal, Self.inset)
+                .padding(.vertical, 8)
             separator
             // Row highlights sit 5 pt from the edge; their own 9 pt padding
             // lines the titles up with the text above.
@@ -95,6 +100,26 @@ struct PopoverView: View {
             stat("Battery", Fmt.watts(snapshot.batteryWatts, signed: true))
             stat("System", Fmt.watts(snapshot.systemWatts))
             stat("Temperature", Fmt.celsius(snapshot.temperature))
+        }
+    }
+
+    private var keepAwake: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // A switch, not a checkbox: it takes effect the moment it moves.
+            // Bound through the controller so a rejected assertion snaps back.
+            Toggle("Keep display awake", isOn: Binding(get: { caffeine.isActive },
+                                                       set: caffeine.setActive))
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .font(.callout)
+            // Colour lives on the icon; orange text fails contrast in light
+            // mode. Full label colour, because a warning has to be readable.
+            Label("Keeping the display on uses more power and drains the battery faster.",
+                  systemImage: "exclamationmark.triangle.fill")
+                .symbolRenderingMode(.multicolor)
+                .font(.callout)
+                .accessibilityLabel(
+                    "Warning. Keeping the display on uses more power and drains the battery faster.")
         }
     }
 

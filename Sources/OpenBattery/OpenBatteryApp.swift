@@ -4,6 +4,7 @@ import SwiftUI
 @main
 struct OpenBatteryApp: App {
     @StateObject private var monitor = BatteryMonitor()
+    @StateObject private var caffeine = CaffeineController()
 
     init() { DockPolicy.start() }
 
@@ -11,8 +12,9 @@ struct OpenBatteryApp: App {
         MenuBarExtra {
             PopoverView()
                 .environmentObject(monitor)
+                .environmentObject(caffeine)
         } label: {
-            MenuBarLabel(snapshot: monitor.snapshot)
+            MenuBarLabel(snapshot: monitor.snapshot, isCaffeinated: caffeine.isActive)
         }
         .menuBarExtraStyle(.window)
 
