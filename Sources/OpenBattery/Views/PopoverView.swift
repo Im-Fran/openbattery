@@ -82,7 +82,11 @@ struct PopoverView: View {
     private var footer: some View {
         HStack {
             Button("Battery Info…") {
-                NSApp.activate(ignoringOtherApps: true)
+                if #available(macOS 14, *) {
+                    NSApp.activate()
+                } else {
+                    NSApp.activate(ignoringOtherApps: true)
+                }
                 openWindow(id: BatteryInfoView.windowID)
             }
             .keyboardShortcut("i")
