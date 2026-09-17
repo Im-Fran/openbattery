@@ -1,13 +1,9 @@
-import ServiceManagement
 import SwiftUI
 
 struct PopoverView: View {
     @EnvironmentObject private var monitor: BatteryMonitor
     @Environment(\.openWindow) private var openWindow
-
-    @AppStorage(MenuBarConfig.itemsKey) private var rawItems = MenuBarConfig.default.rawItems
-    @AppStorage(MenuBarConfig.iconKey) private var showsIcon = MenuBarConfig.default.showsIcon
-    @State private var settingsError: String?
+    @Environment(\.openSettings) private var openSettings
 
     private var snapshot: BatterySnapshot { monitor.snapshot }
 
@@ -25,16 +21,7 @@ struct PopoverView: View {
                 .padding(.horizontal, Self.inset)
                 .padding(.vertical, 10)
             separator
-            VStack(alignment: .leading, spacing: 6) {
-                ChargeLimitSection()
-                if let settingsError {
-                    // Colour lives on the icon; orange text fails contrast in light mode.
-                    Label(settingsError, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.primary)
-                        .symbolRenderingMode(.multicolor)
-                }
-            }
+            ChargeLimitSection()
             .padding(.horizontal, Self.inset)
             .padding(.vertical, 8)
             separator
@@ -125,17 +112,13 @@ struct PopoverView: View {
     private var footer: some View {
         VStack(spacing: 0) {
             Button {
-                if #available(macOS 14, *) {
-                    NSApp.activate()
-                } else {
-                    NSApp.activate(ignoringOtherApps: true)
-                }
+                activate()
                 openWindow(id: BatteryInfoView.windowID)
             } label: {
                 row("Battery Info…", shortcut: "⌘I")
             }
             .keyboardShortcut("i")
-            settingsMenu
+            settingsButton
             Button { NSApp.terminate(nil) } label: {
                 row("Quit OpenBattery", shortcut: "⌘Q")
             }
@@ -144,9 +127,8 @@ struct PopoverView: View {
         .buttonStyle(MenuRowButtonStyle())
     }
 
-    /// A menu-item-like row: title leading, shortcut or chevron trailing.
-    private func row(_ title: String, shortcut: String? = nil,
-                     chevron: Bool = false) -> some View {
+    /// A menu-item-like row: title leading, shortcut trailing.
+    private func row(_ title: String, shortcut: String? = nil) -> some View {
         HStack {
             Text(title)
             Spacer()
@@ -154,80 +136,22 @@ struct PopoverView: View {
                 // Decorative: VoiceOver already announces `.keyboardShortcut`.
                 Text(shortcut).foregroundStyle(.secondary).accessibilityHidden(true)
             }
-            if chevron {
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-            }
         }
     }
 
-    private var settingsMenu: some View {
-        Menu {
-            Menu("Menu Bar") { menuBarOptions }
-            Toggle("Launch at login", isOn: Binding(get: { launchesAtLogin },
-                                                    set: setLaunchAtLogin(_:)))
+    private var settingsButton: some View {
+        Button {
+            activate()
+            openSettings()
         } label: {
-            row("Settings", chevron: true)
+            row("Settings…", shortcut: "⌘,")
         }
-        .menuStyle(.button)
-        .menuIndicator(.hidden)
+        .keyboardShortcut(",")
     }
 
-    @ViewBuilder
-    private var menuBarOptions: some View {
-        Toggle("Battery icon", isOn: Binding(get: { config.effectiveShowsIcon },
-                                             set: { showsIcon = $0 }))
-        // The icon is forced back on when nothing else is left to show, so the
-        // toggle says what is really happening.
-        .disabled(config.items.isEmpty)
-        Divider()
-        ForEach(MenuBarItem.allCases) { item in
-            Toggle(item.title, isOn: Binding(get: { config.contains(item) },
-                                             set: { _ in apply(config.toggling(item)) }))
-        }
-    }
-
-    // MARK: - Menu bar configuration
-
-    private var config: MenuBarConfig {
-        MenuBarConfig(showsIcon: showsIcon, rawItems: rawItems)
-    }
-
-    private func apply(_ config: MenuBarConfig) {
-        rawItems = config.rawItems
-        showsIcon = config.effectiveShowsIcon
-    }
-
-    // MARK: - Login item
-
-    private var launchesAtLogin: Bool { SMAppService.mainApp.status == .enabled }
-
-    private func setLaunchAtLogin(_ enabled: Bool) {
-        do {
-            settingsError = nil
-            if enabled {
-                try SMAppService.mainApp.register()
-            } else {
-                try SMAppService.mainApp.unregister()
-            }
-            // Registration can "succeed" while still blocked on user approval.
-            if SMAppService.mainApp.status == .requiresApproval {
-                report("Allow OpenBattery in System Settings › General › Login Items.")
-                SMAppService.openSystemSettingsLoginItems()
-            }
-        } catch {
-            report("Couldn't change Launch at login. \(error.localizedDescription)")
-        }
-    }
-
-    private func report(_ message: String) {
-        settingsError = message
-        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
-            .announcement: message,
-            .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+    /// A menu bar app is never frontmost, so its windows would open behind others.
+    private func activate() {
+        NSApp.activate()
     }
 }
 

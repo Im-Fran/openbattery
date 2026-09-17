@@ -19,5 +19,9 @@ struct OpenBatteryApp: App {
         }
         .windowResizability(.contentMinSize)
         .defaultPosition(.center)
+
+        Settings {
+            SettingsView()
+        }
     }
 }
