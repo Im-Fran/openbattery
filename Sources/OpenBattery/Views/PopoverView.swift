@@ -11,96 +11,156 @@ struct PopoverView: View {
 
     private var snapshot: BatterySnapshot { monitor.snapshot }
 
+    /// Leading inset shared by text and separators, as in the system's own
+    /// menu bar extras (Wi-Fi, Battery, Sound).
+    private static let inset: CGFloat = 14
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             header
-            Divider()
+                .padding(.horizontal, Self.inset)
+                .padding(.vertical, 12)
+            separator
             power
-            Divider()
-            ChargeLimitSection()
-            if let settingsError {
-                // Colour lives on the icon; orange text fails contrast in light mode.
-                Label(settingsError, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.primary)
-                    .symbolRenderingMode(.multicolor)
+                .padding(.horizontal, Self.inset)
+                .padding(.vertical, 10)
+            separator
+            VStack(alignment: .leading, spacing: 6) {
+                ChargeLimitSection()
+                if let settingsError {
+                    // Colour lives on the icon; orange text fails contrast in light mode.
+                    Label(settingsError, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                        .symbolRenderingMode(.multicolor)
+                }
             }
-            Divider()
+            .padding(.horizontal, Self.inset)
+            .padding(.vertical, 8)
+            separator
+            // Row highlights sit 5 pt from the edge; their own 9 pt padding
+            // lines the titles up with the text above.
             footer
+                .padding(5)
         }
-        .padding(14)
         .frame(width: 300)
         .onAppear { monitor.beginDetailUpdates() }
         .onDisappear { monitor.endDetailUpdates() }
     }
 
+    private var separator: some View {
+        Divider().padding(.horizontal, Self.inset)
+    }
+
     // MARK: - Sections
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(snapshot.isPresent ? "\(snapshot.percentage)%" : "—")
-                .font(.system(.largeTitle, design: .rounded).weight(.medium))
-                .monospacedDigit()
-            VStack(alignment: .leading, spacing: 2) {
-                Text(snapshot.statusText)
-                    .font(.callout)
-                if let capacity = snapshot.currentCapacityMAh {
-                    Text(Fmt.mAh(capacity)).font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Battery").font(.headline)
+                Spacer()
+                if snapshot.lowPowerMode {
+                    // Text alongside the leaf so colour is not the only cue.
+                    Label("Low Power", systemImage: "leaf.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Low Power Mode on")
+                        .help("Low Power Mode is on")
                 }
             }
-            Spacer()
-            if snapshot.lowPowerMode {
-                // Text alongside the green leaf so colour is not the only cue.
-                HStack(spacing: 3) {
-                    Image(systemName: "leaf.fill").foregroundStyle(.green)
-                    Text("Low Power").font(.caption).foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(snapshot.isPresent ? "\(snapshot.percentage)%" : "—")
+                    .font(.system(.largeTitle, design: .rounded).weight(.semibold))
+                    .monospacedDigit()
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(snapshot.statusText)
+                    if let capacity = snapshot.currentCapacityMAh {
+                        Text(Fmt.mAh(capacity)).font(.caption).foregroundStyle(.secondary)
+                    }
                 }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Low Power Mode on")
-                .help("Low Power Mode is on")
+            }
+            if snapshot.isPresent {
+                Gauge(value: Double(snapshot.percentage), in: 0...100) { EmptyView() }
+                    .gaugeStyle(.linearCapacity)
+                    .tint(gaugeTint)
+                    // The percentage above already says this.
+                    .accessibilityHidden(true)
             }
         }
+    }
+
+    /// The colours of the system battery icon. The status text, the
+    /// percentage and the Low Power label carry the same meaning in words.
+    private var gaugeTint: Color {
+        if snapshot.isCharging || (snapshot.isPluggedIn && snapshot.isFullyCharged) { return .green }
+        if snapshot.lowPowerMode { return .yellow }
+        if snapshot.percentage <= 20 && !snapshot.isPluggedIn { return .red }
+        return .secondary
     }
 
     private var power: some View {
-        HStack(alignment: .top, spacing: 0) {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Power")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .accessibilityAddTraits(.isHeader)
             stat("Input", Fmt.watts(snapshot.adapterWatts))
             stat("Battery", Fmt.watts(snapshot.batteryWatts, signed: true))
             stat("System", Fmt.watts(snapshot.systemWatts))
-            stat("Temp", Fmt.celsius(snapshot.temperature), accessibilityTitle: "Temperature")
+            stat("Temperature", Fmt.celsius(snapshot.temperature))
         }
     }
 
-    /// `accessibilityTitle` spells out a title abbreviated to fit a quarter of the popover.
-    private func stat(_ title: String, _ value: String,
-                      accessibilityTitle: String? = nil) -> some View {
-        VStack(spacing: 2) {
-            Text(value).font(.callout).monospacedDigit()
-            Text(title).font(.caption2).foregroundStyle(.secondary)
+    private func stat(_ title: String, _ value: String) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(value).monospacedDigit().foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityTitle ?? title)
+        .accessibilityLabel(title)
         .accessibilityValue(value)
     }
 
     private var footer: some View {
-        HStack {
-            Button("Battery Info…") {
+        VStack(spacing: 0) {
+            Button {
                 if #available(macOS 14, *) {
                     NSApp.activate()
                 } else {
                     NSApp.activate(ignoringOtherApps: true)
                 }
                 openWindow(id: BatteryInfoView.windowID)
+            } label: {
+                row("Battery Info…", shortcut: "⌘I")
             }
             .keyboardShortcut("i")
-            Spacer()
             settingsMenu
-            Button("Quit OpenBattery") { NSApp.terminate(nil) }
-                .keyboardShortcut("q")
+            Button { NSApp.terminate(nil) } label: {
+                row("Quit OpenBattery", shortcut: "⌘Q")
+            }
+            .keyboardShortcut("q")
         }
-        .controlSize(.small)
+        .buttonStyle(MenuRowButtonStyle())
+    }
+
+    /// A menu-item-like row: title leading, shortcut or chevron trailing.
+    private func row(_ title: String, shortcut: String? = nil,
+                     chevron: Bool = false) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            if let shortcut {
+                // Decorative: VoiceOver already announces `.keyboardShortcut`.
+                Text(shortcut).foregroundStyle(.secondary).accessibilityHidden(true)
+            }
+            if chevron {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+        }
     }
 
     private var settingsMenu: some View {
@@ -109,17 +169,10 @@ struct PopoverView: View {
             Toggle("Launch at login", isOn: Binding(get: { launchesAtLogin },
                                                     set: setLaunchAtLogin(_:)))
         } label: {
-            Label("Settings", systemImage: "gearshape")
-                .labelStyle(.iconOnly)
-                // Keep the hit target at the 20 pt macOS minimum.
-                .frame(minWidth: 20, minHeight: 20)
-                .contentShape(Rectangle())
+            row("Settings", chevron: true)
         }
         .menuStyle(.button)
-        .buttonStyle(.borderless)
         .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Settings")
     }
 
     @ViewBuilder
@@ -175,5 +228,34 @@ struct PopoverView: View {
             .announcement: message,
             .priority: NSAccessibilityPriorityLevel.high.rawValue,
         ])
+    }
+}
+
+/// Full-width row with the rounded hover highlight of system menu bar extras.
+private struct MenuRowButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Row(configuration: configuration)
+    }
+
+    private struct Row: View {
+        let configuration: Configuration
+        @State private var isHovered = false
+
+        var body: some View {
+            configuration.label
+                .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
+                .padding(.horizontal, 9)
+                .background {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(highlight)
+                }
+                .contentShape(Rectangle())
+                .onHover { isHovered = $0 }
+        }
+
+        private var highlight: AnyShapeStyle {
+            if configuration.isPressed { return AnyShapeStyle(.tertiary) }
+            return isHovered ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear)
+        }
     }
 }
