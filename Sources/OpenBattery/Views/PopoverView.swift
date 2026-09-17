@@ -50,9 +50,14 @@ struct PopoverView: View {
             }
             Spacer()
             if snapshot.lowPowerMode {
-                Image(systemName: "leaf.fill")
-                    .foregroundStyle(.green)
-                    .help("Low Power Mode is on")
+                // Text alongside the green leaf so colour is not the only cue.
+                HStack(spacing: 3) {
+                    Image(systemName: "leaf.fill").foregroundStyle(.green)
+                    Text("Low Power").font(.caption).foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Low Power Mode on")
+                .help("Low Power Mode is on")
             }
         }
     }
