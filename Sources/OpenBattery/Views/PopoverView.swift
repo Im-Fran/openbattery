@@ -89,11 +89,17 @@ struct PopoverView: View {
             Toggle("Launch at login", isOn: Binding(get: { launchesAtLogin },
                                                     set: setLaunchAtLogin(_:)))
         } label: {
-            Image(systemName: "gearshape")
+            Label("Settings", systemImage: "gearshape")
+                .labelStyle(.iconOnly)
+                // Keep the hit target at the 20 pt macOS minimum.
+                .frame(minWidth: 20, minHeight: 20)
+                .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
         .menuIndicator(.hidden)
         .fixedSize()
+        .help("Settings")
     }
 
     @ViewBuilder
