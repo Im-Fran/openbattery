@@ -84,6 +84,7 @@ struct BatteryInfoView: View {
                 .textSelection(.enabled)
         }
         .font(.callout)
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Composed values
