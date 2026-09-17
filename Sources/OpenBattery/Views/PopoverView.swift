@@ -143,8 +143,21 @@ struct PopoverView: View {
             } else {
                 try SMAppService.mainApp.unregister()
             }
+            // Registration can "succeed" while still blocked on user approval.
+            if SMAppService.mainApp.status == .requiresApproval {
+                report("Allow OpenBattery in System Settings › General › Login Items.")
+                SMAppService.openSystemSettingsLoginItems()
+            }
         } catch {
-            settingsError = error.localizedDescription
+            report("Couldn't change Launch at login. \(error.localizedDescription)")
         }
+    }
+
+    private func report(_ message: String) {
+        settingsError = message
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
+            .announcement: message,
+            .priority: NSAccessibilityPriorityLevel.high.rawValue,
+        ])
     }
 }
