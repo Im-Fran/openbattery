@@ -35,10 +35,9 @@ struct MenuBarLabel: View {
         return "Battery \(snapshot.percentage)%" + (snapshot.isCharging ? ", charging" : "")
     }
 
-    /// SF Symbols that exist all the way back to macOS 11.
     private var symbolName: String {
-        // No battery means mains power; `powerplug` would need macOS 12.
-        guard snapshot.isPresent else { return "bolt.horizontal" }
+        // No battery means mains power.
+        guard snapshot.isPresent else { return "powerplug" }
         if snapshot.isCharging || (snapshot.isPluggedIn && snapshot.isFullyCharged) {
             return "battery.100.bolt"
         }

@@ -5,7 +5,7 @@
 **A native macOS menu bar app that shows what your battery is actually doing.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Im-Fran/openbattery/ci.yml?branch=main&label=CI)](https://github.com/Im-Fran/openbattery/actions/workflows/ci.yml)
-[![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey)](https://www.apple.com/macos/)
+[![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5-orange)](https://swift.org)
 [![License](https://img.shields.io/github/license/Im-Fran/openbattery)](LICENSE)
 
@@ -71,8 +71,8 @@ What the Battery Info window shows:
 
 | Layer | Technology |
 |-------|-----------|
-| Language | Swift 5, deployment target macOS 13 |
-| UI | SwiftUI (`MenuBarExtra`, `Window`) |
+| Language | Swift 5, deployment target macOS 14 |
+| UI | SwiftUI (`MenuBarExtra`, `Window`, `Settings`) |
 | Data | IOKit — `IORegistryEntryCreateCFProperty`, `IOPSNotificationCreateRunLoopSource` |
 | Login item | ServiceManagement (`SMAppService`) |
 | Project generation | [XcodeGen](https://github.com/yonaskolb/XcodeGen) from `project.yml` |
@@ -82,7 +82,7 @@ What the Battery Info window shows:
 
 ## 📋 Requirements
 
-- **macOS 13** or newer on **Apple Silicon** (Intel Macs are not supported)
+- **macOS 14** or newer on **Apple Silicon** (Intel Macs are not supported)
 - **Xcode** with the macOS SDK
 - **XcodeGen** — `brew install xcodegen`
 
