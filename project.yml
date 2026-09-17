@@ -37,6 +37,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: cl.franciscosolis.openbattery
         INFOPLIST_FILE: Sources/OpenBattery/Resources/Info.plist
         COMBINE_HIDPI_IMAGES: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 
   OpenBatteryTests:
     type: bundle.unit-test

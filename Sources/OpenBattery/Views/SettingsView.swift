@@ -70,12 +70,10 @@ private struct GeneralSettingsPane: View {
 
     private var appHeader: some View {
         HStack(spacing: 12) {
-            // No app icon ships yet; a symbol tile stands in for one.
-            Image(systemName: "battery.100.bolt")
-                .font(.system(size: 26, weight: .medium))
-                .foregroundStyle(.white)
-                .frame(width: 52, height: 52)
-                .background(.green.gradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            // The bundle's own icon, so it follows AppIcon without a second copy.
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 64, height: 64)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text("OpenBattery").font(.title2.weight(.semibold))
