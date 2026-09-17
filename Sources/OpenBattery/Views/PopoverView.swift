@@ -19,7 +19,11 @@ struct PopoverView: View {
             Divider()
             ChargeLimitSection()
             if let settingsError {
-                Text(settingsError).font(.caption).foregroundStyle(.orange)
+                // Colour lives on the icon; orange text fails contrast in light mode.
+                Label(settingsError, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+                    .symbolRenderingMode(.multicolor)
             }
             Divider()
             footer
