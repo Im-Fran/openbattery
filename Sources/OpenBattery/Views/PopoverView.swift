@@ -62,16 +62,21 @@ struct PopoverView: View {
             stat("Input", Fmt.watts(snapshot.adapterWatts))
             stat("Battery", Fmt.watts(snapshot.batteryWatts, signed: true))
             stat("System", Fmt.watts(snapshot.systemWatts))
-            stat("Temp", Fmt.celsius(snapshot.temperature))
+            stat("Temp", Fmt.celsius(snapshot.temperature), accessibilityTitle: "Temperature")
         }
     }
 
-    private func stat(_ title: String, _ value: String) -> some View {
+    /// `accessibilityTitle` spells out a title abbreviated to fit a quarter of the popover.
+    private func stat(_ title: String, _ value: String,
+                      accessibilityTitle: String? = nil) -> some View {
         VStack(spacing: 2) {
             Text(value).font(.callout).monospacedDigit()
             Text(title).font(.caption2).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityTitle ?? title)
+        .accessibilityValue(value)
     }
 
     private var footer: some View {
