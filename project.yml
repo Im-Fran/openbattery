@@ -1,6 +1,6 @@
 name: OpenBattery
 options:
-  bundleIdPrefix: com.imfran
+  bundleIdPrefix: cl.franciscosolis
   deploymentTarget:
     macOS: "13.0"
   createIntermediateGroups: true
@@ -30,7 +30,8 @@ targets:
       - Sources/OpenBattery
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.imfran.openbattery
+        PRODUCT_NAME: OpenBattery
+        PRODUCT_BUNDLE_IDENTIFIER: cl.franciscosolis.openbattery
         INFOPLIST_FILE: Sources/OpenBattery/Resources/Info.plist
         COMBINE_HIDPI_IMAGES: YES
 
@@ -45,7 +46,7 @@ targets:
       - path: Sources/OpenBattery/MenuBarConfig.swift
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.imfran.openbattery.tests
+        PRODUCT_BUNDLE_IDENTIFIER: cl.franciscosolis.openbattery.tests
         GENERATE_INFOPLIST_FILE: YES
 
 schemes:
