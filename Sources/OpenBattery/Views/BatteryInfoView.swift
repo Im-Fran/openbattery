@@ -57,7 +57,7 @@ struct BatteryInfoView: View {
             }
             .padding(20)
         }
-        .frame(width: 420, height: 560)
+        .frame(minWidth: 380, idealWidth: 420, minHeight: 360, idealHeight: 560)
         .onAppear { monitor.beginDetailUpdates() }
         .onDisappear { monitor.endDetailUpdates() }
     }

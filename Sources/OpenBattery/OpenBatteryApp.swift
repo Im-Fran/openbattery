@@ -17,7 +17,7 @@ struct OpenBatteryApp: App {
             BatteryInfoView()
                 .environmentObject(monitor)
         }
-        .windowResizability(.contentSize)
+        .windowResizability(.contentMinSize)
         .defaultPosition(.center)
     }
 }
