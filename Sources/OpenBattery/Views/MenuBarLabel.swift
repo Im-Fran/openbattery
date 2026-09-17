@@ -21,6 +21,18 @@ struct MenuBarLabel: View {
                 Text(text)
             }
         }
+        // One spoken summary instead of a symbol name; any other picked
+        // fields follow as the value.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
+        .accessibilityValue(MenuBarConfig(showsIcon: false,
+                                          items: config.items.filter { $0 != .percentage })
+            .text(for: snapshot) ?? "")
+    }
+
+    private var accessibilityText: String {
+        guard snapshot.isPresent else { return "No battery" }
+        return "Battery \(snapshot.percentage)%" + (snapshot.isCharging ? ", charging" : "")
     }
 
     /// SF Symbols that exist all the way back to macOS 11.
