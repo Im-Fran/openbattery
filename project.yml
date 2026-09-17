@@ -18,6 +18,9 @@ settings:
     ENABLE_HARDENED_RUNTIME: YES
     DEAD_CODE_STRIPPING: YES
     ALWAYS_SEARCH_USER_PATHS: NO
+    # Apple Silicon only: Intel Macs are not supported.
+    ARCHS: arm64
+    ONLY_ACTIVE_ARCH: NO
   configs:
     Release:
       SWIFT_COMPILATION_MODE: wholemodule

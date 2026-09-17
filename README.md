@@ -82,7 +82,7 @@ What the Battery Info window shows:
 
 ## 📋 Requirements
 
-- **macOS 13** or newer (Apple Silicon or Intel)
+- **macOS 13** or newer on **Apple Silicon** (Intel Macs are not supported)
 - **Xcode** with the macOS SDK
 - **XcodeGen** — `brew install xcodegen`
 
