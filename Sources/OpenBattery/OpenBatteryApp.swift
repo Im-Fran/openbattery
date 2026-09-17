@@ -3,13 +3,15 @@ import SwiftUI
 @main
 struct OpenBatteryApp: App {
     @StateObject private var monitor = BatteryMonitor()
+    @StateObject private var caffeine = CaffeineController()
 
     var body: some Scene {
         MenuBarExtra {
             PopoverView()
                 .environmentObject(monitor)
+                .environmentObject(caffeine)
         } label: {
-            MenuBarLabel(snapshot: monitor.snapshot)
+            MenuBarLabel(snapshot: monitor.snapshot, isCaffeinated: caffeine.isActive)
         }
         .menuBarExtraStyle(.window)
 
