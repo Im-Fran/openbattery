@@ -164,6 +164,41 @@ where no signing certificate exists:
 bundle exec fastlane build signed:false
 ```
 
+### Signing certificates (fastlane match)
+
+Certificates and provisioning profiles live encrypted in the private repo
+`Im-Fran/certificates`, so a new machine or a CI runner can sign without anyone
+exporting a `.p12` by hand:
+
+```bash
+bundle exec fastlane certificates            # create or fetch what is missing
+bundle exec fastlane certificates readonly:true   # fetch only, never create
+```
+
+It needs `fastlane/.env` (copy `fastlane/.env.example`) with the App Store
+Connect key ids, the matching `AuthKey_<KEY_ID>.p8` in
+`~/.appstoreconnect/private_keys/`, and the repo passphrase. On the machine that
+set it up the passphrase comes from the login keychain automatically; read it
+with:
+
+```bash
+security find-generic-password -s fastlane-match-openbattery -w
+```
+
+Elsewhere — CI included — pass it as `MATCH_PASSWORD`.
+
+**Developer ID is the exception.** Apple does not let an App Store Connect API
+key create a Developer ID certificate; only the Account Holder can, signed in
+interactively. Create it once in Xcode (Settings → Accounts → Manage
+Certificates → **+** → Developer ID Application), then push it into the match
+repo:
+
+```bash
+bundle exec fastlane match import --type developer_id
+```
+
+From then on `fastlane certificates` just fetches it like the rest.
+
 ---
 
 ## 🔌 How the charge limit works

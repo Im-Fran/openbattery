@@ -6,3 +6,4 @@ OpenBattery.xcodeproj/
 .build/
 fastlane/report.xml
 fastlane/Preview.html
+fastlane/.env

@@ -15,6 +15,14 @@ For _fastlane_ installation instructions, see [Installing _fastlane_](https://do
 
 ## Mac
 
+### mac certificates
+
+```sh
+[bundle exec] fastlane mac certificates
+```
+
+Sync signing certificates and profiles from the match repo
+
 ### mac test
 
 ```sh

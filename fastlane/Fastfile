@@ -9,11 +9,51 @@ PROJECT = "OpenBattery.xcodeproj"
 SCHEME = "OpenBattery"
 BUILD_DIR = "build"
 
+# Keep the match passphrase out of any file on disk: on the machine that created
+# it, it comes from the login keychain. CI passes MATCH_PASSWORD as a secret.
+if ENV["MATCH_PASSWORD"].to_s.empty?
+  keychain_password = `security find-generic-password -s fastlane-match-openbattery -w 2>/dev/null`.strip
+  ENV["MATCH_PASSWORD"] = keychain_password unless keychain_password.empty?
+end
+
 default_platform(:mac)
 
 platform :mac do
   before_all do
     sh("xcodegen", "generate", "--spec", "#{ROOT}/project.yml", "--project", ROOT)
+  end
+
+  # One App Store Connect key drives match, notarization and uploads alike.
+  private_lane :api_key do
+    key_id = ENV.fetch("ASC_KEY_ID")
+    app_store_connect_api_key(
+      key_id: key_id,
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      key_filepath: File.expand_path("~/.appstoreconnect/private_keys/AuthKey_#{key_id}.p8")
+    )
+  end
+
+  desc "Sync signing certificates and profiles from the match repo"
+  lane :certificates do |options|
+    key = api_key
+    # Creating material is a local, deliberate act; CI only ever consumes it.
+    readonly = options.fetch(:readonly, is_ci)
+
+    # No "development" type: a Mac development profile needs registered devices,
+    # and the app signs locally with a plain Apple Development identity anyway.
+    match(
+      type: "appstore",
+      api_key: key,
+      readonly: readonly,
+      additional_cert_types: ["mac_installer_distribution"]
+    )
+
+    # Developer ID cannot be created through the App Store Connect API — Apple
+    # restricts it to the Account Holder signed in interactively. It is created
+    # once in Xcode and pushed into the match repo with
+    # `bundle exec fastlane match import --type developer_id`, so here we only
+    # fetch it, and only once it is there.
+    match(type: "developer_id", api_key: key, readonly: true) if options[:developer_id] != false
   end
 
   desc "Run the unit tests"
