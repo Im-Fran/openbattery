@@ -175,17 +175,23 @@ bundle exec fastlane build signed:false
 ### Releasing
 
 Releases run on GitHub Actions and are driven entirely by tags, because
-publishing a Release creates a tag too:
+publishing a Release creates a tag too. Every tag does the same thing: archive
+with the App Store distribution signature — Apple Distribution plus the
+app-store provisioning profile, packaged as a signed `.pkg` — and upload the
+result to App Store Connect as a TestFlight build, which is also kept with the
+workflow run.
 
-| What you do | What happens |
-|---|---|
-| Push a tag, e.g. `1.4.0+7` | TestFlight build, and the DMG is kept as a run artifact |
-| Publish a GitHub Release | the same, plus the DMG is attached to the release |
+It stops there on purpose. A TestFlight build reaches testers only once someone
+promotes it, and reaches the App Store only through a submission made by hand,
+so nothing ever ships because a tag was pushed.
 
-So a bare tag is a beta and a Release is a production version. The tag carries
-both version numbers: `<version>+<build>`, with an optional leading `v`, and a
-missing `+<build>` means build 1. Nothing in `project.yml` needs bumping — the
-tag is passed to the build.
+The tag carries both version numbers: `<version>+<build>`, with an optional
+leading `v`, and a missing `+<build>` means build 1. Nothing in `project.yml`
+needs bumping — the tag is passed to the build.
+
+The notarized DMG is not part of the pipeline: its Developer ID certificate
+cannot be issued through the App Store Connect API, so that build is a local
+lane (see below) and the image is attached to the GitHub Release by hand.
 
 The workflow needs five repository secrets:
 
@@ -197,6 +203,9 @@ The workflow needs five repository secrets:
 | `MATCH_GIT_BASIC_AUTHORIZATION` | base64 of `user:token` for a token that can read `Im-Fran/certificates` |
 
 ### Releasing the GitHub build
+
+Run from a machine that holds the Developer ID certificate — this one is not
+part of the workflow:
 
 ```bash
 bundle exec fastlane release_github   # signed, notarized OpenBattery-<version>.dmg

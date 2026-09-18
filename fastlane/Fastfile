@@ -109,6 +109,9 @@ platform :mac do
     UI.success("Packaged #{package_dmg(app)}")
   end
 
+  # The lane CI runs for every tag: App Store signing, TestFlight, nothing
+  # further. The build waits there until someone promotes it, so no tag can
+  # ship a version on its own.
   desc "Build and upload a TestFlight build to App Store Connect"
   lane :release_appstore do |options|
     key = api_key

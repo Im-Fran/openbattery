@@ -1,9 +1,15 @@
 name: Release
 
 # Tags only. Publishing a GitHub Release creates a tag too, so this one workflow
-# covers both cases: every tag goes to TestFlight, and the DMG is attached to the
-# release when the tag has one — that is what separates a beta from a shipped
-# version.
+# covers both cases: every tag is archived with the App Store distribution
+# signature and uploaded to App Store Connect.
+#
+# TestFlight always, never a direct App Store submission: the build sits there
+# until someone deliberately promotes it, so shipping stays a manual act.
+#
+# The Developer ID route — the notarized DMG — is not run here: that certificate
+# cannot be created through the App Store Connect API, so it is a local lane
+# (`fastlane release_github`) rather than part of the pipeline.
 #
 # Tag format: <version>[+<build>], with an optional leading "v".
 #   1.4.0+7  → version 1.4.0, build 7
@@ -23,7 +29,7 @@ concurrency:
 
 jobs:
   release:
-    name: Notarized DMG and TestFlight
+    name: TestFlight
     runs-on: macos-latest
     timeout-minutes: 60
     env:
@@ -71,7 +77,7 @@ jobs:
           bundler-cache: true
 
       - name: Install build tools
-        run: brew install xcodegen uv
+        run: brew install xcodegen
 
       - name: Show toolchain
         run: |
@@ -79,39 +85,18 @@ jobs:
           xcodebuild -version
           xcodegen --version
 
-      # Signed with Developer ID, notarized and stapled, both the app and the
-      # disk image.
-      - name: Build the notarized DMG
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-          BUILD: ${{ steps.version.outputs.build }}
-        run: bundle exec fastlane release_github version:"$VERSION" build_number:"$BUILD"
-
-      - name: Upload the DMG to the workflow run
-        uses: actions/upload-artifact@v7
-        with:
-          name: OpenBattery-${{ steps.version.outputs.version }}-dmg
-          path: build/*.dmg
-          if-no-files-found: error
-
-      # Separate build: the App Store copy is signed with Apple Distribution and
-      # carries a provisioning profile, which the Developer ID one must not.
-      - name: Upload to TestFlight
+      # Apple Distribution plus the app-store provisioning profile, packaged as
+      # a .pkg signed with the Mac installer certificate — the only shape App
+      # Store Connect accepts.
+      - name: Build and upload to TestFlight
         env:
           VERSION: ${{ steps.version.outputs.version }}
           BUILD: ${{ steps.version.outputs.build }}
         run: bundle exec fastlane release_appstore version:"$VERSION" build_number:"$BUILD"
 
-      # A tag with a Release behind it is a production version, so the DMG goes
-      # on the release page. A bare tag is a beta and stops at TestFlight.
-      - name: Attach the DMG to the release, if this tag has one
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ steps.version.outputs.tag }}
-        run: |
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" build/*.dmg --clobber
-            echo "Attached the DMG to release $TAG"
-          else
-            echo "No release for $TAG — TestFlight only, DMG left as a run artifact"
-          fi
+      - name: Keep the installer with the workflow run
+        uses: actions/upload-artifact@v7
+        with:
+          name: OpenBattery-${{ steps.version.outputs.version }}-pkg
+          path: build/*.pkg
+          if-no-files-found: error
