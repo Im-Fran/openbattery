@@ -75,7 +75,8 @@ platform :mac do
       project: PROJECT,
       scheme: SCHEME,
       configuration: "Release",
-      export_method: "mac-application",
+      export_method: options.fetch(:export_method, "mac-application"),
+      codesigning_identity: options[:codesigning_identity],
       skip_package_pkg: true,
       skip_codesigning: options[:signed] == false,
       derived_data_path: "#{BUILD_DIR}/DerivedData",
@@ -83,4 +84,43 @@ platform :mac do
       archive_path: "#{BUILD_DIR}/OpenBattery.xcarchive"
     )
   end
+
+  desc "Build, notarize and package the DMG that ships on GitHub"
+  lane :release_github do
+    key = api_key
+    match(type: "developer_id", api_key: key, readonly: true)
+
+    app = build(
+      export_method: "developer-id",
+      codesigning_identity: "Developer ID Application"
+    )
+
+    # Notarize the app first so the ticket is stapled into what people actually
+    # run, then the disk image they download. Stapling both is what keeps a
+    # first launch working offline.
+    notarize(package: app, api_key: key, print_log: true)
+    dmg = package_dmg(app)
+    notarize(package: dmg, api_key: key, print_log: true)
+
+    UI.success("Notarized #{dmg}")
+    dmg
+  end
+end
+
+# hdiutil ships with macOS; a DMG plugin would be a dependency for six lines.
+def package_dmg(app)
+  staging = File.join(ROOT, BUILD_DIR, "dmg")
+  dmg = File.join(ROOT, BUILD_DIR, "OpenBattery.dmg")
+
+  FileUtils.rm_rf(staging)
+  FileUtils.rm_f(dmg)
+  FileUtils.mkdir_p(staging)
+  FileUtils.cp_r(File.expand_path(app, ROOT), staging)
+  # The drag-to-install target everyone expects inside a Mac disk image.
+  FileUtils.ln_s("/Applications", File.join(staging, "Applications"))
+
+  sh("hdiutil", "create", "-volname", "OpenBattery", "-srcfolder", staging,
+     "-ov", "-format", "UDZO", dmg)
+  sh("codesign", "--sign", "Developer ID Application", "--timestamp", dmg)
+  dmg
 end
