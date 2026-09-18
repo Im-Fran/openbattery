@@ -575,13 +575,13 @@ private struct BucketChart: View {
         .frame(height: 120)
     }
 
-    /// The locale is pinned rather than inherited: an axis is the one place
-    /// that would otherwise format itself in the system language while the
-    /// rest of this English interface does not.
+    /// Pinned rather than inherited: an axis would otherwise format itself
+    /// in the system language while the rest of this English interface does
+    /// not. English words, the user's own 12- or 24-hour clock.
     private var axisLabelFormat: Date.FormatStyle {
         (axis == .hour ? Date.FormatStyle.dateTime.hour()
                        : Date.FormatStyle.dateTime.month(.abbreviated))
-            .locale(Fmt.locale)
+            .locale(Fmt.dateLocale)
     }
 }
 

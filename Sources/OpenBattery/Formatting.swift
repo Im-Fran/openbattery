@@ -82,7 +82,10 @@ enum Fmt {
 
     static func date(_ value: Date?) -> String {
         guard let value else { return unavailable }
-        return dateFormatter.string(from: value)
+        // Named fields rather than a .medium style: the region still decides
+        // the order, but an all-numeric date is ambiguous on any day of the
+        // month that could also be a month, which is a third of them.
+        return value.formatted(.dateTime.day().month(.abbreviated).year().locale(dateLocale))
     }
 
     static func minutes(_ value: Int?) -> String {
@@ -90,23 +93,30 @@ enum Fmt {
         return BatteryDecoding.formatDuration(minutes: value)
     }
 
-    /// OpenBattery's interface is English, so numbers and dates are formatted
-    /// in English too instead of following the system locale. The chart axes
-    /// format their own dates, so they read this one too.
-    static let locale = Locale(identifier: "en_US")
+    /// OpenBattery's interface is English, so its numbers are grouped the
+    /// English way instead of following the system locale.
+    static let numberLocale = Locale(identifier: "en_US")
+
+    /// Dates and times keep the user's region, because region is a separate
+    /// setting from language: a Mac set to a 24-hour clock has to read 15,
+    /// not 3 PM, however the month beside it is spelled. English words,
+    /// the user's own clock and date order. The chart axes read this too.
+    static let dateLocale = englishLocale(basedOn: .autoupdatingCurrent)
+
+    /// Only the language code is swapped. Replacing the whole language
+    /// component drops the region and lands on a plain "en", which is how the
+    /// 12-hour clock crept back in; this keeps the region, and with it the
+    /// user's date order and their 24-Hour Time setting.
+    static func englishLocale(basedOn locale: Locale) -> Locale {
+        var components = Locale.Components(locale: locale)
+        components.languageComponents.languageCode = .english
+        return Locale(components: components)
+    }
 
     private static let numberFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
-        formatter.locale = locale
-        return formatter
-    }()
-
-    private static let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .none
-        formatter.locale = locale
+        formatter.locale = numberLocale
         return formatter
     }()
 }
