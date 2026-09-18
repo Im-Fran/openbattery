@@ -415,7 +415,7 @@ private struct HeroTab<Tiles: View, Detail: View>: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 16) {
                 header
                 HStack(alignment: .top, spacing: 10) { tiles }
                 detail
@@ -456,7 +456,7 @@ private struct HeroHeader: View {
                 // Everything it shows is written beside it.
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
                     // A display figure, not body copy: macOS has no Dynamic
                     // Type, and the point of the tab is to be readable from
                     // across the desk.
@@ -621,7 +621,7 @@ private struct DetailSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
-                SectionLabel(title).accessibilityAddTraits(.isHeader)
+                SectionLabel(title, isHeading: true).accessibilityAddTraits(.isHeader)
                 InfoButton(title: title, text: info)
                 Spacer()
                 // Never .tertiary: at this size it measures under 2:1 against
@@ -643,17 +643,24 @@ private struct DetailSection<Content: View>: View {
 
 private struct SectionLabel: View {
     let text: String
+    /// A heading over a block, rather than the name of one value. Same small
+    /// uppercase style, a step up in size and colour, so the two levels of the
+    /// hierarchy do not render identically.
+    let isHeading: Bool
 
-    init(_ text: String) { self.text = text }
+    init(_ text: String, isHeading: Bool = false) {
+        self.text = text
+        self.isHeading = isHeading
+    }
 
     var body: some View {
         // Names a value, so it reads at the same tier as one; and no scale
         // factor, because 10 pt is already the smallest legible size on macOS.
         Text(text)
-            .font(.caption2.weight(.semibold))
+            .font(isHeading ? .callout.weight(.semibold) : .caption2.weight(.semibold))
             .textCase(.uppercase)
             .tracking(0.4)
-            .foregroundStyle(.subdued)
+            .foregroundStyle(isHeading ? Color.primary : .subdued)
             // Take the width offered and grow downwards. Without this the
             // label is laid out at its ideal single-line width and truncates
             // in a narrow tile instead of wrapping.
