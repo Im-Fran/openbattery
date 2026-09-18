@@ -6,7 +6,7 @@
 
 **A native macOS menu bar app that shows what your battery is actually doing.**
 
-[![CI](https://img.shields.io/github/actions/workflow/status/Im-Fran/openbattery/ci.yml?branch=main&label=CI)](https://github.com/Im-Fran/openbattery/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/Im-Fran/openbattery/ci.yml?branch=dev&label=CI)](https://github.com/Im-Fran/openbattery/actions/workflows/ci.yml)
 [![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5-orange)](https://swift.org)
 [![License](https://img.shields.io/github/license/Im-Fran/openbattery)](LICENSE)
@@ -152,6 +152,116 @@ make test XCODEBUILD_FLAGS='CODE_SIGNING_ALLOWED=NO'
 
 `make` regenerates `OpenBattery.xcodeproj` from `project.yml` whenever that file
 changes, so the project is never committed.
+
+### With fastlane
+
+The same build and test runs are also available as fastlane lanes, which is the
+route to take for release automation (archiving, notarizing, uploading):
+
+```bash
+bundle install                      # once, installs fastlane
+
+bundle exec fastlane build          # Release archive → build/OpenBattery.app
+bundle exec fastlane test           # unit tests, JUnit report in build/test_output
+```
+
+Both lanes regenerate the Xcode project first, and both take `signed:false`
+where no signing certificate exists:
+
+```bash
+bundle exec fastlane build signed:false
+```
+
+### Releasing
+
+Releases run on GitHub Actions and are driven entirely by tags, because
+publishing a Release creates a tag too:
+
+| What you do | What happens |
+|---|---|
+| Push a tag, e.g. `1.4.0+7` | TestFlight build, and the DMG is kept as a run artifact |
+| Publish a GitHub Release | the same, plus the DMG is attached to the release |
+
+So a bare tag is a beta and a Release is a production version. The tag carries
+both version numbers: `<version>+<build>`, with an optional leading `v`, and a
+missing `+<build>` means build 1. Nothing in `project.yml` needs bumping — the
+tag is passed to the build.
+
+The workflow needs five repository secrets:
+
+| Secret | What it is |
+|---|---|
+| `ASC_KEY_ID`, `ASC_ISSUER_ID` | the App Store Connect key's identifiers |
+| `ASC_KEY_CONTENT` | the `AuthKey_<KEY_ID>.p8`, base64 encoded |
+| `MATCH_PASSWORD` | the match repo passphrase (in the login keychain locally) |
+| `MATCH_GIT_BASIC_AUTHORIZATION` | base64 of `user:token` for a token that can read `Im-Fran/certificates` |
+
+### Releasing the GitHub build
+
+```bash
+bundle exec fastlane release_github   # signed, notarized OpenBattery-<version>.dmg
+bundle exec fastlane dmg              # repackage the built app, no notarization
+```
+
+`release_github` signs with Developer ID, notarizes the app, packages it into a
+disk image with the grid background from the landing page, then signs and
+notarizes the image too. Both carry a stapled ticket, so a first launch works
+offline. Expect Apple to take anywhere from a minute to half an hour.
+
+The version in the file name is read from the built app, so bumping
+`MARKETING_VERSION` in `project.yml` is all it takes.
+
+Use the `dmg` lane while adjusting the window: it repackages in seconds instead
+of waiting on notarization. `packaging/dmg-background.swift` draws the
+background and `packaging/dmg-settings.py` describes the window; the image is
+assembled by [dmgbuild](https://dmgbuild.readthedocs.io), run through `uvx` at a
+pinned version so nothing is installed permanently.
+
+The obvious route — telling the Finder to `set background picture` over
+AppleScript — does not work on current macOS: the assignment raises no error and
+never reaches `.DS_Store`, so the image comes out bare. dmgbuild writes
+`.DS_Store` itself and sidesteps the Finder entirely.
+
+### Signing certificates (fastlane match)
+
+Certificates and provisioning profiles live encrypted in the private repo
+`Im-Fran/certificates`, so a new machine or a CI runner can sign without anyone
+exporting a `.p12` by hand:
+
+```bash
+bundle exec fastlane certificates            # create or fetch what is missing
+bundle exec fastlane certificates readonly:true   # fetch only, never create
+```
+
+It needs `fastlane/.env` (copy `fastlane/.env.example`) with the App Store
+Connect key ids, the matching `AuthKey_<KEY_ID>.p8` in
+`~/.appstoreconnect/private_keys/`, and the repo passphrase. On the machine that
+set it up the passphrase comes from the login keychain automatically; read it
+with:
+
+```bash
+security find-generic-password -s fastlane-match-openbattery -w
+```
+
+Elsewhere — CI included — pass it as `MATCH_PASSWORD`.
+
+**Developer ID is the exception.** Apple does not let an App Store Connect API
+key create a Developer ID certificate; only the Account Holder can, signed in
+interactively. Create it once in Xcode (Settings → Accounts → Manage
+Certificates → **+** → Developer ID Application), then push it into the match
+repo:
+
+```bash
+bundle exec fastlane match import --type developer_id --skip_certificate_matching true
+```
+
+**Name the exported files after the certificate id on the portal** (for example
+`23WML9Y2N5.cer` and `23WML9Y2N5.p12`). match looks a stored certificate up by
+its file name, so a file called `openbattery.p12` makes every later run fail
+with "not available on the Developer Portal". The id is the last path component
+of the certificate's URL in the Apple Developer portal, under Certificates.
+
+From then on `fastlane certificates` just fetches it like the rest.
 
 ---
 

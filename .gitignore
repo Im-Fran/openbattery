@@ -4,4 +4,7 @@ OpenBattery.xcodeproj/
 .DS_Store
 *.xcuserdatad
 .build/
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/.env
 .claude/worktrees/
