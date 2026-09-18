@@ -9,6 +9,56 @@ import SwiftUI
 struct BatteryInfoView: View {
     static let windowID = "battery-info"
 
+    /// Which tab is showing. In defaults rather than in @State so the View
+    /// menu, which lives in another scene entirely, can move it — and so the
+    /// window reopens where it was left.
+    enum Tab: String, CaseIterable, Identifiable {
+        case charge, power, health, lifetime
+
+        static let key = "batteryInfoTab"
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .charge: return "Charge"
+            case .power: return "Power"
+            case .health: return "Health"
+            case .lifetime: return "Lifetime"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .charge: return "battery.75percent"
+            case .power: return "bolt"
+            case .health: return "heart.text.square"
+            case .lifetime: return "clock.arrow.circlepath"
+            }
+        }
+
+        /// The tab actually shown. A gauge with no lifetime log has no
+        /// Lifetime tab, and the stored selection can arrive on it from
+        /// defaults as easily as land on it by changing — so both the window
+        /// and the menu ask this rather than reading the stored value.
+        static func shown(_ tab: Tab, hasLifetime: Bool) -> Tab {
+            tab == .lifetime && !hasLifetime ? .charge : tab
+        }
+
+        /// Spelled out like the title and the symbol above, rather than
+        /// derived from the case order: reordering the enum would otherwise
+        /// silently renumber every shortcut.
+        var shortcut: KeyEquivalent {
+            switch self {
+            case .charge: return "1"
+            case .power: return "2"
+            case .health: return "3"
+            case .lifetime: return "4"
+            }
+        }
+    }
+
+    @AppStorage(Tab.key) private var tab = Tab.charge
     @EnvironmentObject private var monitor: BatteryMonitor
 
     private var snapshot: BatterySnapshot { monitor.snapshot }
@@ -27,24 +77,33 @@ struct BatteryInfoView: View {
         .onDisappear { monitor.endDetailUpdates() }
     }
 
+    private var shownTab: Binding<Tab> {
+        Binding(get: { Tab.shown(tab, hasLifetime: snapshot.lifetime != nil) },
+                set: { tab = $0 })
+    }
+
+    /// The shortcuts live in the View menu rather than on the tab items: a
+    /// command reachable only by clicking is invisible to anyone reading the
+    /// menu bar to find out what the window can do.
     private var tabs: some View {
-        TabView {
+        TabView(selection: shownTab) {
             ChargeTab(snapshot: snapshot, log: monitor.chargeLog)
-                .tabItem { Label("Charge", systemImage: "battery.75percent") }
-                .keyboardShortcut("1")
+                .tabItem { Label(Tab.charge.title, systemImage: Tab.charge.symbol) }
+                .tag(Tab.charge)
             PowerTab(snapshot: snapshot, load: monitor.load)
-                .tabItem { Label("Power", systemImage: "bolt") }
-                .keyboardShortcut("2")
+                .tabItem { Label(Tab.power.title, systemImage: Tab.power.symbol) }
+                .tag(Tab.power)
             HealthTab(snapshot: snapshot, log: monitor.capacityLog)
-                .tabItem { Label("Health", systemImage: "heart.text.square") }
-                .keyboardShortcut("3")
+                .tabItem { Label(Tab.health.title, systemImage: Tab.health.symbol) }
+                .tag(Tab.health)
             if let lifetime = snapshot.lifetime {
                 LifetimeTab(lifetime: lifetime)
-                    .tabItem { Label("Lifetime", systemImage: "clock.arrow.circlepath") }
-                    .keyboardShortcut("4")
+                    .tabItem { Label(Tab.lifetime.title, systemImage: Tab.lifetime.symbol) }
+                    .tag(Tab.lifetime)
             }
         }
     }
+
 
     private var noBattery: some View {
         ContentUnavailableView("No Battery", systemImage: "battery.slash",
