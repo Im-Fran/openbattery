@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Questions and ideas
+    url: https://github.com/Im-Fran/openbattery/discussions
+    about: Ask how something works, or float an idea before opening an issue.
+  - name: 🔒 Report a security vulnerability
+    url: https://github.com/Im-Fran/openbattery/security/advisories/new
+    about: Please report vulnerabilities privately, never as a public issue.
+  - name: 🔋 How the charge limit works
+    url: https://github.com/Im-Fran/openbattery#-how-the-charge-limit-works
+    about: OpenBattery cannot set a charge limit — macOS handles that itself.

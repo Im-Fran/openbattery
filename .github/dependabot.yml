@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # GitHub Actions used by ci.yml and release.yml.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"
+    labels: ["dependencies"]
+
+  # fastlane and its gems (Gemfile / Gemfile.lock at the repository root).
+  - package-ecosystem: bundler
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "build"
+    labels: ["dependencies"]
