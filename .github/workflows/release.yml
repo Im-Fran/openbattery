@@ -63,9 +63,11 @@ jobs:
           echo "build=$BUILD" >> "$GITHUB_OUTPUT"
           echo "Building $VERSION ($BUILD) from $TAG"
 
+      # Ruby 4: Gemfile.lock is in bundler 4's format, which bundler 2.x — what
+      # a 3.x runner ships — cannot read.
       - uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "3.3"
+          ruby-version: "4.0"
           bundler-cache: true
 
       - name: Install build tools
