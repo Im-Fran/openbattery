@@ -85,6 +85,13 @@ platform :mac do
     )
   end
 
+  desc "Package the already-built app into a DMG, without notarizing"
+  lane :dmg do
+    app = "#{BUILD_DIR}/OpenBattery.app"
+    UI.user_error!("build first: no #{app}") unless File.exist?(File.join(ROOT, app))
+    UI.success("Packaged #{package_dmg(app)}")
+  end
+
   desc "Build, notarize and package the DMG that ships on GitHub"
   lane :release_github do
     key = api_key
@@ -107,20 +114,41 @@ platform :mac do
   end
 end
 
-# hdiutil ships with macOS; a DMG plugin would be a dependency for six lines.
+# hdiutil and osascript ship with macOS; a DMG tool would be a dependency for
+# what these few lines already do.
+VOLUME = "OpenBattery"
+
 def package_dmg(app)
+  app_abs = File.expand_path(app, ROOT)
+  version = `plutil -extract CFBundleShortVersionString raw -o - "#{app_abs}/Contents/Info.plist"`.strip
+  UI.user_error!("no CFBundleShortVersionString in #{app_abs}") if version.empty?
+
   staging = File.join(ROOT, BUILD_DIR, "dmg")
-  dmg = File.join(ROOT, BUILD_DIR, "OpenBattery.dmg")
+  scratch = File.join(ROOT, BUILD_DIR, "OpenBattery-rw.dmg")
+  dmg = File.join(ROOT, BUILD_DIR, "OpenBattery-#{version}.dmg")
+  mount = "/Volumes/#{VOLUME}"
 
   FileUtils.rm_rf(staging)
-  FileUtils.rm_f(dmg)
-  FileUtils.mkdir_p(staging)
-  FileUtils.cp_r(File.expand_path(app, ROOT), staging)
+  [scratch, dmg].each { |path| FileUtils.rm_f(path) }
+  FileUtils.mkdir_p(File.join(staging, ".background"))
+  FileUtils.cp_r(app_abs, staging)
   # The drag-to-install target everyone expects inside a Mac disk image.
   FileUtils.ln_s("/Applications", File.join(staging, "Applications"))
+  FileUtils.cp(File.join(ROOT, "packaging", "dmg-background.tiff"),
+               File.join(staging, ".background", "background.tiff"))
 
-  sh("hdiutil", "create", "-volname", "OpenBattery", "-srcfolder", staging,
-     "-ov", "-format", "UDZO", dmg)
+  # Writable first: the Finder has to open the image to record the window into
+  # it, and it cannot write to a compressed one.
+  sh("hdiutil", "detach", mount, "-force") if Dir.exist?(mount)
+  sh("hdiutil", "create", "-volname", VOLUME, "-srcfolder", staging, "-ov",
+     "-format", "UDRW", scratch)
+  sh("hdiutil", "attach", scratch, "-nobrowse", "-readwrite")
+  sh("osascript", File.join(ROOT, "packaging", "dmg-window.applescript"))
+  sh("hdiutil", "detach", mount)
+
+  sh("hdiutil", "convert", scratch, "-format", "UDZO", "-imagekey",
+     "zlib-level=9", "-o", dmg)
+  FileUtils.rm_f(scratch)
   sh("codesign", "--sign", "Developer ID Application", "--timestamp", dmg)
   dmg
 end

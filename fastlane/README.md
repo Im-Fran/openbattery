@@ -39,6 +39,22 @@ Run the unit tests
 
 Build a Release OpenBattery.app into build/
 
+### mac dmg
+
+```sh
+[bundle exec] fastlane mac dmg
+```
+
+Package the already-built app into a DMG, without notarizing
+
+### mac release_github
+
+```sh
+[bundle exec] fastlane mac release_github
+```
+
+Build, notarize and package the DMG that ships on GitHub
+
 ----
 
 This README.md is auto-generated and will be re-generated every time [_fastlane_](https://fastlane.tools) is run.
