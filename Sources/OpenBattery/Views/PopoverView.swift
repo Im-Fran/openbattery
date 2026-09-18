@@ -59,19 +59,19 @@ struct PopoverView: View {
                     // Text alongside the leaf so colour is not the only cue.
                     Label("Low Power", systemImage: "leaf.fill")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.subdued)
                         .accessibilityLabel("Low Power Mode on")
                         .help("Low Power Mode is on")
                 }
             }
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(snapshot.isPresent ? "\(snapshot.percentage)%" : "—")
+                Text(snapshot.isPresent ? "\(snapshot.percentage)%" : Fmt.unavailable)
                     .font(.system(.largeTitle, design: .rounded).weight(.semibold))
                     .monospacedDigit()
                 VStack(alignment: .leading, spacing: 1) {
                     Text(snapshot.statusText)
                     if let capacity = snapshot.currentCapacityMAh {
-                        Text(Fmt.mAh(capacity)).font(.caption).foregroundStyle(.secondary)
+                        Text(Fmt.mAh(capacity)).font(.caption).foregroundStyle(.subdued)
                     }
                 }
             }
@@ -89,7 +89,7 @@ struct PopoverView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Power")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.subdued)
                 .accessibilityAddTraits(.isHeader)
             stat("Input", Fmt.watts(snapshot.adapterWatts))
             stat("Battery", Fmt.watts(snapshot.batteryWatts, signed: true))
@@ -116,7 +116,10 @@ struct PopoverView: View {
             // people learn to ignore alarms.
             Label(Self.keepAwakeCost, systemImage: caffeine.isActive
                   ? "exclamationmark.triangle.fill" : "info.circle")
-                .symbolRenderingMode(.multicolor)
+                // Multicolor only for the triangle: info.circle has a
+                // multicolor variant too, and it renders blue, which reads as
+                // a button in a label that is not one.
+                .symbolRenderingMode(caffeine.isActive ? .multicolor : .monochrome)
                 .font(.callout)
                 // Take the width offered and grow downwards. Without this the
                 // label is laid out at its ideal single-line width and the
@@ -129,13 +132,13 @@ struct PopoverView: View {
 
     private func stat(_ title: String, _ value: String) -> some View {
         HStack {
-            Text(title)
+            Text(title).foregroundStyle(.subdued)
             Spacer()
-            Text(value).monospacedDigit().foregroundStyle(.secondary)
+            Text(value).monospacedDigit()
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
-        .accessibilityValue(value)
+        .accessibilityValue(Fmt.spoken(value))
     }
 
     private var footer: some View {
@@ -163,7 +166,7 @@ struct PopoverView: View {
             Spacer()
             if let shortcut {
                 // Decorative: VoiceOver already announces `.keyboardShortcut`.
-                Text(shortcut).foregroundStyle(.secondary).accessibilityHidden(true)
+                Text(shortcut).foregroundStyle(.subdued).accessibilityHidden(true)
             }
         }
     }

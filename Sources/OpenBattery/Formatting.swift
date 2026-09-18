@@ -12,6 +12,13 @@ extension BatterySnapshot {
     }
 }
 
+extension ShapeStyle where Self == Color {
+    /// Quieter than a reading, louder than chrome: `.secondary` is about 4:1
+    /// on a light window, under the 4.5:1 that text carrying or naming a
+    /// number has to clear. Used for every label that qualifies a value.
+    static var subdued: Color { Color.primary.opacity(0.7) }
+}
+
 /// Display formatting shared by the popover and the detail window.
 enum Fmt {
     /// Shown wherever the gauge has nothing to report.

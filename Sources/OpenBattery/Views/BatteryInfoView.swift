@@ -407,13 +407,6 @@ private struct LifetimeTab: View {
 
 // MARK: - Shared layout
 
-extension ShapeStyle where Self == Color {
-    /// Quieter than a reading, louder than chrome: `.secondary` is about 4:1
-    /// on a light window, under the 4.5:1 that text carrying or naming a
-    /// number has to clear. Used for every label that qualifies a value.
-    static var subdued: Color { Color.primary.opacity(0.7) }
-}
-
 /// The shape every tab takes: headline, three tiles, detail underneath.
 private struct HeroTab<Tiles: View, Detail: View>: View {
     @ViewBuilder let header: HeroHeader
@@ -704,9 +697,11 @@ private struct BucketChart: View {
                 if let value = bucket.value {
                     BarMark(x: .value("When", bucket.date, unit: axis),
                             y: .value("Value", value))
-                        // Accepted risk, light mode: system green is 2.22:1
-                        // on the window and 1.98:1 on the plot fill, under the
-                        // 3:1 WCAG asks of a graphical object (dark is ~6.9:1).
+                        // Accepted risk, light mode: system green computes to
+                        // 2.22:1 on the window and 1.98:1 on the plot fill,
+                        // under the 3:1 WCAG asks of a graphical object (dark
+                        // is ~6.9:1). Computed from Apple's published token
+                        // values, not sampled off a display.
                         // Kept because the reading never depends on resolving a
                         // bar against its background — the axis is labelled,
                         // every mark is spoken, and the chart is named.
