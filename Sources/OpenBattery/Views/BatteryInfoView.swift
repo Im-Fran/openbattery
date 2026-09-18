@@ -502,6 +502,8 @@ private struct BucketChart: View {
     let axis: Calendar.Component
     let empty: String
 
+    @State private var pointer: Date?
+
     var body: some View {
         if buckets.contains(where: { $0.value != nil }) {
             chart
@@ -510,23 +512,51 @@ private struct BucketChart: View {
         }
     }
 
+    /// The bucket the pointer is over, if that bucket has a reading. Gaps
+    /// are normal — nothing is recorded while the Mac sleeps — and pointing
+    /// at one shows nothing, rather than jumping the rule back to an earlier
+    /// hour that does have a bar.
+    private var selected: SampleLog.Bucket? {
+        guard let pointer else { return nil }
+        return buckets.last { $0.date <= pointer }.flatMap { $0.value == nil ? nil : $0 }
+    }
+
     private var chart: some View {
-        Chart(buckets) { bucket in
-            if let value = bucket.value {
-                BarMark(x: .value("When", bucket.date, unit: axis),
-                        y: .value("Value", value))
-                    // Accepted risk, light mode: system green is 2.22:1 on
-                    // the window and 1.98:1 on the plot fill, under the 3:1
-                    // WCAG asks of a graphical object (dark mode is ~6.9:1).
-                    // Kept because the reading never depends on resolving a
-                    // bar against its background — the axis is labelled, every
-                    // mark carries a spoken value, and the chart is named.
-                    .foregroundStyle(tint.gradient)
-                    .cornerRadius(4)
-                    .accessibilityLabel(Text(bucket.date, format: axisLabelFormat))
-                    .accessibilityValue(label(value))
+        Chart {
+            ForEach(buckets) { bucket in
+                if let value = bucket.value {
+                    BarMark(x: .value("When", bucket.date, unit: axis),
+                            y: .value("Value", value))
+                        // Accepted risk, light mode: system green is 2.22:1
+                        // on the window and 1.98:1 on the plot fill, under the
+                        // 3:1 WCAG asks of a graphical object (dark is ~6.9:1).
+                        // Kept because the reading never depends on resolving a
+                        // bar against its background — the axis is labelled,
+                        // every mark is spoken, and the chart is named.
+                        .foregroundStyle(tint.gradient)
+                        .cornerRadius(4)
+                        .accessibilityLabel(Text(bucket.date, format: axisLabelFormat))
+                        .accessibilityValue(label(value))
+                }
+            }
+            if let selected, let value = selected.value {
+                RuleMark(x: .value("When", selected.date, unit: axis))
+                    // Explicit, not .secondary: inside a Chart the
+                    // hierarchical tiers resolve against the series colour.
+                    .foregroundStyle(Color.primary.opacity(0.55))
+                    .annotation(position: .top, spacing: 4,
+                                // The plot, not the chart: fitting to the
+                                // chart lets the readout cover the axis labels.
+                                overflowResolution: .init(x: .fit(to: .plot), y: .fit(to: .plot))) {
+                        ChartReadout("\(axisLabelFormat.format(selected.date))  ·  \(label(value))")
+                    }
+                    // The bars it points at are already spoken, one by one.
+                    .accessibilityHidden(true)
             }
         }
+        // Twelve bars against three gridlines: the pointer is how anyone
+        // reads an exact value off this, and macOS expects it to work.
+        .chartXSelection(value: $pointer)
         .chartPlotStyle { $0.background(Color.primary.opacity(0.06)) }
         .chartYScale(domain: domain)
         .chartYAxis {
@@ -563,6 +593,8 @@ private struct LoadChart: View {
     /// that is never coming is worse than saying so.
     let isAvailable: Bool
 
+    @State private var pointer: Date?
+
     var body: some View {
         if samples.count > 1 {
             chart
@@ -573,20 +605,42 @@ private struct LoadChart: View {
         }
     }
 
+    /// The sample nearest the pointer, since this series is continuous
+    /// rather than one reading per period.
+    private var selected: BatteryMonitor.LoadSample? {
+        guard let pointer else { return nil }
+        return samples.min { abs($0.date.timeIntervalSince(pointer))
+                           < abs($1.date.timeIntervalSince(pointer)) }
+    }
+
     private var chart: some View {
-        Chart(samples) { sample in
-            AreaMark(x: .value("Time", sample.date), y: .value("Watts", sample.watts))
-                .foregroundStyle(.blue.opacity(0.2))
-                .interpolationMethod(.monotone)
-                // Fill only: the line below plots the same samples, and
-                // VoiceOver would otherwise read every watt reading twice.
-                .accessibilityHidden(true)
-            LineMark(x: .value("Time", sample.date), y: .value("Watts", sample.watts))
-                .foregroundStyle(.blue)
-                .interpolationMethod(.monotone)
-                .accessibilityLabel(Text(sample.date, format: .dateTime.hour().minute().second()))
-                .accessibilityValue(Fmt.watts(sample.watts))
+        Chart {
+            ForEach(samples) { sample in
+                AreaMark(x: .value("Time", sample.date), y: .value("Watts", sample.watts))
+                    .foregroundStyle(.blue.opacity(0.2))
+                    .interpolationMethod(.monotone)
+                    // Fill only: the line below plots the same samples, and
+                    // VoiceOver would otherwise read every watt reading twice.
+                    .accessibilityHidden(true)
+                LineMark(x: .value("Time", sample.date), y: .value("Watts", sample.watts))
+                    .foregroundStyle(.blue)
+                    .interpolationMethod(.monotone)
+                    .accessibilityLabel(Text(sample.date,
+                                             format: .dateTime.hour().minute().second()))
+                    .accessibilityValue(Fmt.watts(sample.watts))
+            }
+            if let selected {
+                RuleMark(x: .value("Time", selected.date))
+                    .foregroundStyle(Color.primary.opacity(0.55))
+                    .annotation(position: .top, spacing: 4,
+                                overflowResolution: .init(x: .fit(to: .plot), y: .fit(to: .plot))) {
+                        ChartReadout(Fmt.watts(selected.watts))
+                    }
+                    // The line it points at is already spoken, sample by sample.
+                    .accessibilityHidden(true)
+            }
         }
+        .chartXSelection(value: $pointer)
         .chartPlotStyle { $0.background(Color.primary.opacity(0.06)) }
         .chartYScale(domain: 0...ceiling)
         .chartYAxis {
@@ -606,6 +660,26 @@ private struct LoadChart: View {
     /// Headroom above the peak so the line never touches the top edge.
     private var ceiling: Double {
         max(5, ((samples.map(\.watts).max() ?? 0) * 1.2).rounded(.up))
+    }
+}
+
+/// What the pointer is over, floated above the mark it belongs to.
+private struct ChartReadout: View {
+    let text: String
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .monospacedDigit()
+            // Explicit: annotation content inherits the chart's foreground
+            // style, which is whatever the mark it hangs off was drawn in.
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(.background))
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(.separator))
     }
 }
 
@@ -708,7 +782,9 @@ private struct InfoRow: View {
     /// VoiceOver.
     private var spokenValue: Text {
         var spoken = AttributedString(Fmt.spoken(value))
-        spoken.accessibilitySpeechSpellsOutCharacters = spellsOut
+        // Nothing to spell out when there is no reading: "Not available" is
+        // a sentence, not a serial number.
+        spoken.accessibilitySpeechSpellsOutCharacters = spellsOut && value != Fmt.unavailable
         return Text(spoken)
     }
 }
