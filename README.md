@@ -6,7 +6,7 @@
 
 **A native macOS menu bar app that shows what your battery is actually doing.**
 
-[![CI](https://img.shields.io/github/actions/workflow/status/Im-Fran/openbattery/ci.yml?branch=main&label=CI)](https://github.com/Im-Fran/openbattery/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/Im-Fran/openbattery/ci.yml?branch=dev&label=CI)](https://github.com/Im-Fran/openbattery/actions/workflows/ci.yml)
 [![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5-orange)](https://swift.org)
 [![License](https://img.shields.io/github/license/Im-Fran/openbattery)](LICENSE)
