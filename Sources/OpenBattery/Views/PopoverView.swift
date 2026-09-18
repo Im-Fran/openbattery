@@ -109,6 +109,10 @@ struct PopoverView: View {
                   systemImage: "exclamationmark.triangle.fill")
                 .symbolRenderingMode(.multicolor)
                 .font(.callout)
+                // Take the width offered and grow downwards. Without this the
+                // label is laid out at its ideal single-line width and the
+                // warning is cut off mid-sentence.
+                .fixedSize(horizontal: false, vertical: true)
                 .accessibilityLabel(
                     "Warning. Keeping the display on uses more power and drains the battery faster.")
         }
