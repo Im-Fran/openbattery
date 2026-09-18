@@ -748,6 +748,16 @@ private struct BucketChart: View {
         }
     }
 
+    /// Every bucket, not only the ones with a reading: left to itself the
+    /// chart fits the axis to the data, so a log holding four of twelve hours
+    /// draws a four-hour chart under a heading that says twelve.
+    private var span: ClosedRange<Date> {
+        let start = buckets.first?.date ?? .now
+        let last = buckets.last?.date ?? start
+        let end = Calendar.current.date(byAdding: axis, value: 1, to: last) ?? last
+        return start...end
+    }
+
     /// The bucket the pointer is over, if that bucket has a reading. Gaps
     /// are normal — nothing is recorded while the Mac sleeps — and pointing
     /// at one shows nothing, rather than jumping the rule back to an earlier
@@ -773,7 +783,7 @@ private struct BucketChart: View {
                         // every mark is spoken, and the chart is named.
                         .foregroundStyle(tint.gradient)
                         .cornerRadius(4)
-                        .accessibilityLabel(Text(bucket.date, format: axisLabelFormat))
+                        .accessibilityLabel(Text(bucket.date, format: spokenFormat))
                         .accessibilityValue(label(value))
                 }
             }
@@ -795,6 +805,11 @@ private struct BucketChart: View {
         // Twelve bars against three gridlines: the pointer is how anyone
         // reads an exact value off this, and macOS expects it to work.
         .chartXSelection(value: $pointer)
+        // The period the heading promises, not the period that happens to
+        // hold data. Y stays 0...100 — a bar implies a zero baseline, and
+        // cropping it to make small movements look big is the one thing a
+        // bar chart must not do.
+        .chartXScale(domain: span)
         .chartPlotStyle { $0.background(Color.primary.opacity(0.06)) }
         .chartYScale(domain: domain)
         .chartYAxis {
@@ -805,7 +820,7 @@ private struct BucketChart: View {
             }
         }
         .chartXAxis {
-            AxisMarks(values: .stride(by: axis, count: axis == .hour ? 3 : 2)) {
+            AxisMarks(values: .stride(by: axis, count: axis == .hour ? 3 : 2)) { value in
                 AxisGridLine()
                 AxisValueLabel(format: axisLabelFormat)
             }
@@ -816,9 +831,21 @@ private struct BucketChart: View {
     /// Pinned rather than inherited: an axis would otherwise format itself
     /// in the system language while the rest of this English interface does
     /// not. English words, the user's own 12- or 24-hour clock.
+    /// The year is on every month label, not only where it turns over:
+    /// twelve months span two of them, and which labels are drawn depends on
+    /// the stride, so "the one in January" is not reliably one of them.
     private var axisLabelFormat: Date.FormatStyle {
         (axis == .hour ? Date.FormatStyle.dateTime.hour()
-                       : Date.FormatStyle.dateTime.month(.abbreviated))
+                       : Date.FormatStyle.dateTime.month(.abbreviated).year())
+            .locale(Fmt.dateLocale)
+    }
+
+    /// Spoken in full: an abbreviation that reads fine on an axis does not
+    /// read well out loud, and VoiceOver has no neighbouring labels for
+    /// context the way the eye does.
+    private var spokenFormat: Date.FormatStyle {
+        (axis == .hour ? Date.FormatStyle.dateTime.hour()
+                       : Date.FormatStyle.dateTime.month(.wide).year())
             .locale(Fmt.dateLocale)
     }
 }
@@ -841,6 +868,16 @@ private struct LoadChart: View {
         } else {
             EmptyChart(text: "This Mac doesn't report what the system is drawing.")
         }
+    }
+
+    /// The minute the caption promises, not the minute that happens to hold
+    /// samples: this log starts empty and fills every few seconds, so a tab
+    /// opened twenty seconds ago would otherwise stretch twenty seconds
+    /// across the width. Anchored to the newest sample rather than to now, so
+    /// it does not depend on when the body is re-evaluated.
+    private var span: ClosedRange<Date> {
+        let end = samples.last?.date ?? .now
+        return end.addingTimeInterval(-BatteryMonitor.loadWindow)...end
     }
 
     /// The sample nearest the pointer, since this series is continuous
@@ -879,6 +916,7 @@ private struct LoadChart: View {
             }
         }
         .chartXSelection(value: $pointer)
+        .chartXScale(domain: span)
         .chartPlotStyle { $0.background(Color.primary.opacity(0.06)) }
         .chartYScale(domain: 0...ceiling)
         .chartYAxis {
