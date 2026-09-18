@@ -47,6 +47,14 @@ Build a Release OpenBattery.app into build/
 
 Package the already-built app into a DMG, without notarizing
 
+### mac release_appstore
+
+```sh
+[bundle exec] fastlane mac release_appstore
+```
+
+Build and upload a TestFlight build to App Store Connect
+
 ### mac release_github
 
 ```sh

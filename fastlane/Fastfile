@@ -20,17 +20,32 @@ default_platform(:mac)
 
 platform :mac do
   before_all do
+    # A throwaway keychain on CI: match has nowhere to put certificates
+    # otherwise, and the runner's login keychain is locked.
+    setup_ci if is_ci
     sh("xcodegen", "generate", "--spec", "#{ROOT}/project.yml", "--project", ROOT)
   end
 
   # One App Store Connect key drives match, notarization and uploads alike.
+  # Locally it is the .p8 on disk; CI passes the same key as a secret.
   private_lane :api_key do
     key_id = ENV.fetch("ASC_KEY_ID")
-    app_store_connect_api_key(
-      key_id: key_id,
-      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
-      key_filepath: File.expand_path("~/.appstoreconnect/private_keys/AuthKey_#{key_id}.p8")
-    )
+    key_content = ENV["ASC_KEY_CONTENT"]
+
+    if key_content.to_s.empty?
+      app_store_connect_api_key(
+        key_id: key_id,
+        issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+        key_filepath: File.expand_path("~/.appstoreconnect/private_keys/AuthKey_#{key_id}.p8")
+      )
+    else
+      app_store_connect_api_key(
+        key_id: key_id,
+        issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+        key_content: key_content,
+        is_key_content_base64: true
+      )
+    end
   end
 
   desc "Sync signing certificates and profiles from the match repo"
@@ -77,11 +92,13 @@ platform :mac do
       configuration: "Release",
       export_method: options.fetch(:export_method, "mac-application"),
       codesigning_identity: options[:codesigning_identity],
-      skip_package_pkg: true,
+      export_options: options[:export_options],
+      skip_package_pkg: options.fetch(:package_pkg, false) == false,
       skip_codesigning: options[:signed] == false,
       derived_data_path: "#{BUILD_DIR}/DerivedData",
       output_directory: BUILD_DIR,
-      archive_path: "#{BUILD_DIR}/OpenBattery.xcarchive"
+      archive_path: "#{BUILD_DIR}/OpenBattery.xcarchive",
+      xcargs: build_xcargs(options)
     )
   end
 
@@ -92,14 +109,66 @@ platform :mac do
     UI.success("Packaged #{package_dmg(app)}")
   end
 
+  desc "Build and upload a TestFlight build to App Store Connect"
+  lane :release_appstore do |options|
+    key = api_key
+    match(
+      type: "appstore",
+      api_key: key,
+      readonly: true,
+      additional_cert_types: ["mac_installer_distribution"]
+    )
+
+    # On macOS the profile is embedded while archiving, not while exporting, so
+    # the export mapping alone leaves the app without one.
+    profile = lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING].values.first
+
+    build(
+      export_method: "app-store",
+      codesigning_identity: "Apple Distribution",
+      package_pkg: true,
+      profile: profile,
+      version: options[:version],
+      build_number: options[:build_number],
+      export_options: {
+        signingStyle: "manual",
+        provisioningProfiles: lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING],
+        installerSigningCertificate: "3rd Party Mac Developer Installer"
+      }
+    )
+
+    pkg = lane_context[SharedValues::PKG_OUTPUT_PATH]
+    UI.user_error!("no .pkg was produced") if pkg.nil?
+    # App Store Connect rejects a build without one, and it is the part most
+    # easily lost: verify here rather than after a failed upload.
+    unless File.exist?(File.join(ROOT, BUILD_DIR, "OpenBattery.app/Contents/embedded.provisionprofile"))
+      UI.user_error!("the exported app has no embedded.provisionprofile")
+    end
+
+    if options[:upload] == false
+      UI.success("Built #{pkg} — upload skipped")
+    else
+      upload_to_testflight(
+        pkg: pkg,
+        api_key: key,
+        # The build takes minutes to process on Apple's side and nothing here
+        # depends on the outcome.
+        skip_waiting_for_build_processing: true
+      )
+    end
+    pkg
+  end
+
   desc "Build, notarize and package the DMG that ships on GitHub"
-  lane :release_github do
+  lane :release_github do |options|
     key = api_key
     match(type: "developer_id", api_key: key, readonly: true)
 
     app = build(
       export_method: "developer-id",
-      codesigning_identity: "Developer ID Application"
+      codesigning_identity: "Developer ID Application",
+      version: options[:version],
+      build_number: options[:build_number]
     )
 
     # Notarize the app first so the ticket is stapled into what people actually
@@ -119,6 +188,17 @@ end
 # macOS, so nothing but the icon positions ever reached the image.
 VOLUME = "OpenBattery"
 DMGBUILD_VERSION = "1.6.7"
+
+# A tag like 1.2.0+7 carries both version fields; with no tag, whatever
+# project.yml says stands.
+def build_xcargs(options)
+  args = []
+  args << "CODE_SIGNING_ALLOWED=NO" if options[:signed] == false
+  args << "MARKETING_VERSION=#{options[:version]}" if options[:version]
+  args << "CURRENT_PROJECT_VERSION=#{options[:build_number]}" if options[:build_number]
+  args << "PROVISIONING_PROFILE_SPECIFIER='#{options[:profile]}'" if options[:profile]
+  args.join(" ") unless args.empty?
+end
 
 def package_dmg(app)
   app_abs = File.expand_path(app, ROOT)
