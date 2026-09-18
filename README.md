@@ -1,5 +1,7 @@
 <div align="center">
 
+![OpenBattery: a native macOS menu bar app that shows what your battery is actually doing. Three Battery Info windows show the Lifetime, Power and Charge tabs, each with one headline reading, three figures beside it and a chart underneath.](.github/assets/readme-banner.webp)
+
 # 🔋 OpenBattery
 
 **A native macOS menu bar app that shows what your battery is actually doing.**
