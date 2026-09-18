@@ -194,8 +194,14 @@ Certificates → **+** → Developer ID Application), then push it into the matc
 repo:
 
 ```bash
-bundle exec fastlane match import --type developer_id
+bundle exec fastlane match import --type developer_id --skip_certificate_matching true
 ```
+
+**Name the exported files after the certificate id on the portal** (for example
+`23WML9Y2N5.cer` and `23WML9Y2N5.p12`). match looks a stored certificate up by
+its file name, so a file called `openbattery.p12` makes every later run fail
+with "not available on the Developer Portal". The id is the last path component
+of the certificate's URL in the Apple Developer portal, under Certificates.
 
 From then on `fastlane certificates` just fetches it like the rest.
 

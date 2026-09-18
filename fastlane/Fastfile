@@ -48,12 +48,12 @@ platform :mac do
       additional_cert_types: ["mac_installer_distribution"]
     )
 
-    # Developer ID cannot be created through the App Store Connect API — Apple
-    # restricts it to the Account Holder signed in interactively. It is created
-    # once in Xcode and pushed into the match repo with
-    # `bundle exec fastlane match import --type developer_id`, so here we only
-    # fetch it, and only once it is there.
-    match(type: "developer_id", api_key: key, readonly: true) if options[:developer_id] != false
+    # The Developer ID *certificate* cannot be created through the App Store
+    # Connect API — Apple restricts that to the Account Holder signed in
+    # interactively. It is created once in Xcode and pushed into the match repo
+    # with `bundle exec fastlane match import --type developer_id`; its profile
+    # is ordinary and match manages it like any other.
+    match(type: "developer_id", api_key: key, readonly: readonly)
   end
 
   desc "Run the unit tests"
