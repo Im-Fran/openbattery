@@ -1,0 +1,116 @@
+name: 🐛 Bug report
+description: Something in OpenBattery behaves differently than it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. Battery values come straight
+        from `AppleSmartBattery`, and the raw data differs between machines — the
+        more detail you give here, the faster it can be pinned down.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before reporting
+      options:
+        - label: I searched the existing issues and this is not a duplicate.
+          required: true
+        - label: I am running the latest released version of OpenBattery.
+          required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected to see instead.
+      placeholder: |
+        The menu bar shows 0 mAh while the popover shows 4,991 mAh.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where does it happen
+      options:
+        - Menu bar label
+        - Popover
+        - Battery Info window
+        - Settings / menu bar configuration
+        - Launch at login
+        - Keep display awake
+        - Charge limit guide
+        - Build or install
+        - Somewhere else / not sure
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: OpenBattery version
+      description: From the popover, or the tag you built from.
+      placeholder: "1.0.0 (build 3)"
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      description: " → About This Mac"
+      placeholder: "macOS 15.3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: hardware
+    attributes:
+      label: Mac hardware
+      options:
+        - Apple Silicon (M1 / M2 / M3 / M4 …)
+        - Intel
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: Mac model
+      description: Optional, but battery quirks are often model-specific.
+      placeholder: "MacBook Pro 14-inch, M3 Pro, 2023"
+
+  - type: textarea
+    id: ioreg
+    attributes:
+      label: Raw battery data
+      description: |
+        Optional and very helpful for wrong-value bugs. Run this in Terminal and
+        paste the output. It is read-only and contains no personal data, but look
+        it over before posting.
+      value: |
+        <details><summary>ioreg -arw0 -c AppleSmartBattery</summary>
+
+        ```
+        # paste here
+        ```
+
+        </details>
+      render: markdown
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots or anything else

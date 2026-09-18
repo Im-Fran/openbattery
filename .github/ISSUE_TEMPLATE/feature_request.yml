@@ -1,0 +1,66 @@
+name: ✨ Feature request
+description: Suggest a new reading, control or behaviour.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        OpenBattery reads, it does not write: it never changes a system setting,
+        and it uses no root, no privileged helper and no shelling out to `ioreg`
+        or `pmset`. Requests that stay inside those limits are the easiest to
+        land.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before requesting
+      options:
+        - label: I searched the existing issues and this is not a duplicate.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is missing
+      description: The problem you hit, not the solution you have in mind.
+      placeholder: |
+        I cannot tell at a glance whether the battery is above its cycle-count
+        warranty limit.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like instead
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the app
+      options:
+        - Menu bar label
+        - Popover
+        - Battery Info window
+        - Settings / menu bar configuration
+        - Charts and history
+        - Packaging, build or release
+        - Somewhere else / not sure
+    validations:
+      required: true
+
+  - type: input
+    id: key
+    attributes:
+      label: IORegistry key
+      description: |
+        If you are asking for a new reading, the key it comes from, if you know
+        it. `ioreg -arw0 -c AppleSmartBattery` lists them.
+      placeholder: "CycleCount"
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
