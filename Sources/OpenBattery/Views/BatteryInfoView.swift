@@ -59,6 +59,7 @@ struct BatteryInfoView: View {
     }
 
     @AppStorage(Tab.key) private var tab = Tab.charge
+    @State private var isPolling = false
     @EnvironmentObject private var monitor: BatteryMonitor
 
     private var snapshot: BatterySnapshot { monitor.snapshot }
@@ -73,8 +74,38 @@ struct BatteryInfoView: View {
         // tabbing; wide enough for three stat tiles to sit side by side.
         .frame(minWidth: 440, idealWidth: 500, minHeight: 420, idealHeight: 520)
         // On the window, not on each tab: switching tabs must not move the count.
-        .onAppear { monitor.beginDetailUpdates() }
-        .onDisappear { monitor.endDetailUpdates() }
+        .onAppear { updatePolling() }
+        .onDisappear { setPolling(false) }
+        // A window nobody can see does not need a reading every five seconds,
+        // and a battery utility polling behind another app is a poor joke.
+        .onReceive(NotificationCenter.default
+            .publisher(for: NSWindow.didChangeOcclusionStateNotification)) { _ in updatePolling() }
+        .onReceive(NotificationCenter.default
+            .publisher(for: NSApplication.didHideNotification)) { _ in setPolling(false) }
+        .onReceive(NotificationCenter.default
+            .publisher(for: NSApplication.didUnhideNotification)) { _ in updatePolling() }
+    }
+
+    /// Nothing is lost by pausing: IOKit still wakes the monitor on every
+    /// power source change, so the charge log keeps filling. Only the
+    /// five-second cadence stops, which is the part nobody is watching.
+    private func updatePolling() { setPolling(isOnScreen) }
+
+    /// Counts any window of the app, not this one specifically — SwiftUI does
+    /// not hand a view its NSWindow, and the error is in the safe direction:
+    /// Settings open in front of an occluded Battery Info keeps the reading
+    /// running, which is what it did before this existed.
+    private var isOnScreen: Bool {
+        NSApp.windows.contains {
+            $0.canBecomeMain && $0.isVisible && $0.occlusionState.contains(.visible)
+        }
+    }
+
+    /// The monitor counts clients, so begin and end have to stay paired.
+    private func setPolling(_ wanted: Bool) {
+        guard wanted != isPolling else { return }
+        isPolling = wanted
+        if wanted { monitor.beginDetailUpdates() } else { monitor.endDetailUpdates() }
     }
 
     private var shownTab: Binding<Tab> {
