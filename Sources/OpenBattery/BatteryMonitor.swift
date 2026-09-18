@@ -12,7 +12,22 @@ import IOKit.ps
 final class BatteryMonitor: ObservableObject {
 
     @Published private(set) var snapshot: BatterySnapshot
+    /// The last 12 hours of charge, for the chart in the Charge tab.
+    @Published private(set) var chargeLog = SampleLog.charge.loaded()
+    /// The last 12 months of full charge capacity, for the Health tab.
+    @Published private(set) var capacityLog = SampleLog.capacity.loaded()
+    /// A minute of system load, for the Power tab. In memory only: it is worth
+    /// nothing after a relaunch, and it only fills while a window is open.
+    @Published private(set) var load: [LoadSample] = []
 
+    struct LoadSample: Identifiable, Equatable {
+        let date: Date
+        let watts: Double
+
+        var id: Date { date }
+    }
+
+    static let loadWindow: TimeInterval = 60
     static let windowInterval: TimeInterval = 5
     /// Slower than an open window: this one may run all day.
     static let menuBarInterval: TimeInterval = 10
@@ -70,8 +85,30 @@ final class BatteryMonitor: ObservableObject {
 
     func refresh() {
         let fresh = BatteryReader.read(needsDetailedRead ? .detailed : .quick)
+        // Every reading passes through here, whether it came from the timer or
+        // from IOKit — which fires on each percentage change, so the logs keep
+        // filling even with no window open and no timer running.
+        // Both logs rate-limit themselves; this is a no-op most of the time.
+        if fresh.isPresent {
+            var updated = chargeLog
+            if updated.record(fresh.percentage) { chargeLog = updated }
+        }
+        // Only the detailed read knows the capacity, so this one fills in
+        // whenever a window is open or the menu bar shows mAh.
+        if let capacity = fresh.fullChargeCapacityMAh {
+            var updated = capacityLog
+            if updated.record(capacity) { capacityLog = updated }
+        }
+        recordLoad(fresh.systemWatts)
         // Equatable guard: no SwiftUI invalidation when nothing actually moved.
         if fresh != snapshot { snapshot = fresh }
+    }
+
+    private func recordLoad(_ watts: Double?, at date: Date = .now) {
+        guard let watts else { return }
+        let oldest = date.addingTimeInterval(-Self.loadWindow)
+        load = load.filter { $0.date > oldest && $0.date <= date }
+            + [LoadSample(date: date, watts: watts)]
     }
 
     // MARK: - Refresh policy
