@@ -168,7 +168,7 @@ private struct HealthTab: View {
                        status: status,
                        meta: meta)
         } tiles: {
-            StatTile("Cycles", cycles)
+            StatTile("Cycles", Fmt.integer(snapshot.cycleCount))
             StatTile("Age", Fmt.count(snapshot.ageInDays, "day"))
             StatTile("Nominal", Fmt.mAh(snapshot.nominalCapacityMAh))
         } detail: {
@@ -199,11 +199,12 @@ private struct HealthTab: View {
         return isHealthy ? .green : .orange
     }
 
+    /// Only capacity is judged. The gauge also reports a design cycle count,
+    /// but nothing documents it as the point where a battery needs service,
+    /// and it is not the same number across machines — counting cycles
+    /// against it would be inventing a threshold.
     private var status: String {
         guard let isHealthy else { return "Capacity unknown" }
-        if let count = snapshot.cycleCount, let design = snapshot.designCycleCount, count >= design {
-            return "Past its rated cycle count"
-        }
         return isHealthy ? "Normal · no service recommended"
                          : "Below 80% of design capacity · service recommended"
     }
@@ -215,13 +216,9 @@ private struct HealthTab: View {
         } else {
             capacity = Fmt.mAh(snapshot.fullChargeCapacityMAh)
         }
-        return "\(capacity)  ·  \(Fmt.integer(snapshot.cycleCount)) cycles"
-    }
-
-    private var cycles: String {
-        guard let count = snapshot.cycleCount else { return "—" }
-        guard let design = snapshot.designCycleCount else { return Fmt.integer(count) }
-        return "\(Fmt.integer(count)) / \(Fmt.integer(design))"
+        // The cycle count lives in its own tile a line below; saying it twice
+        // in one block only makes both harder to find.
+        return capacity
     }
 
     /// The log stores mAh; a year of raw mAh all looks the same, so the chart
