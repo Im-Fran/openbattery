@@ -7,5 +7,3 @@ OpenBattery.xcodeproj/
 fastlane/report.xml
 fastlane/Preview.html
 fastlane/.env
-packaging/dmg-background.png
-packaging/dmg-background@2x.png

@@ -131,10 +131,12 @@ def package_dmg(app)
   # uvx runs dmgbuild without installing anything permanently; the version is
   # pinned so a release is reproducible.
   sh("uvx", "dmgbuild@#{DMGBUILD_VERSION}",
-     "--no-hidpi", # the TIFF already carries both resolutions
+     # No @2x hunt: pairing one would produce an uncompressed TIFF, tens of
+     # megabytes at this canvas size, where the PNG costs a few hundred KB.
+     "--no-hidpi",
      "-s", File.join(ROOT, "packaging", "dmg-settings.py"),
      "-D", "app=#{app_abs}",
-     "-D", "background=#{File.join(ROOT, 'packaging', 'dmg-background.tiff')}",
+     "-D", "background=#{File.join(ROOT, 'packaging', 'dmg-background.png')}",
      VOLUME, dmg)
 
   sh("codesign", "--sign", "Developer ID Application", "--timestamp", dmg)
