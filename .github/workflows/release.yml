@@ -1,0 +1,115 @@
+name: Release
+
+# Tags only. Publishing a GitHub Release creates a tag too, so this one workflow
+# covers both cases: every tag goes to TestFlight, and the DMG is attached to the
+# release when the tag has one — that is what separates a beta from a shipped
+# version.
+#
+# Tag format: <version>[+<build>], with an optional leading "v".
+#   1.4.0+7  → version 1.4.0, build 7
+#   1.4.0    → version 1.4.0, build 1
+on:
+  push:
+    tags: ["*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build, e.g. 1.0.0+1"
+        required: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Notarized DMG and TestFlight
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
+      MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+      MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # The tag reaches the shell through the environment, never interpolated
+      # into the script: a ref name is attacker-shaped input.
+      - name: Read version from the tag
+        id: version
+        env:
+          RAW_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          TAG="$RAW_TAG"
+          case "$TAG" in
+            *[!A-Za-z0-9.+_-]*)
+              echo "Refusing tag with unexpected characters: $TAG" >&2
+              exit 1
+              ;;
+          esac
+          VERSION="${TAG#v}"
+          BUILD="1"
+          case "$VERSION" in
+            *+*)
+              BUILD="${VERSION##*+}"
+              VERSION="${VERSION%%+*}"
+              ;;
+          esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+          echo "Building $VERSION ($BUILD) from $TAG"
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      - name: Install build tools
+        run: brew install xcodegen uv
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcodegen --version
+
+      # Signed with Developer ID, notarized and stapled, both the app and the
+      # disk image.
+      - name: Build the notarized DMG
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD: ${{ steps.version.outputs.build }}
+        run: bundle exec fastlane release_github version:"$VERSION" build_number:"$BUILD"
+
+      - name: Upload the DMG to the workflow run
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenBattery-${{ steps.version.outputs.version }}-dmg
+          path: build/*.dmg
+          if-no-files-found: error
+
+      # Separate build: the App Store copy is signed with Apple Distribution and
+      # carries a provisioning profile, which the Developer ID one must not.
+      - name: Upload to TestFlight
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD: ${{ steps.version.outputs.build }}
+        run: bundle exec fastlane release_appstore version:"$VERSION" build_number:"$BUILD"
+
+      # A tag with a Release behind it is a production version, so the DMG goes
+      # on the release page. A bare tag is a beta and stops at TestFlight.
+      - name: Attach the DMG to the release, if this tag has one
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" build/*.dmg --clobber
+            echo "Attached the DMG to release $TAG"
+          else
+            echo "No release for $TAG — TestFlight only, DMG left as a run artifact"
+          fi

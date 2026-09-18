@@ -164,6 +164,30 @@ where no signing certificate exists:
 bundle exec fastlane build signed:false
 ```
 
+### Releasing
+
+Releases run on GitHub Actions and are driven entirely by tags, because
+publishing a Release creates a tag too:
+
+| What you do | What happens |
+|---|---|
+| Push a tag, e.g. `1.4.0+7` | TestFlight build, and the DMG is kept as a run artifact |
+| Publish a GitHub Release | the same, plus the DMG is attached to the release |
+
+So a bare tag is a beta and a Release is a production version. The tag carries
+both version numbers: `<version>+<build>`, with an optional leading `v`, and a
+missing `+<build>` means build 1. Nothing in `project.yml` needs bumping — the
+tag is passed to the build.
+
+The workflow needs five repository secrets:
+
+| Secret | What it is |
+|---|---|
+| `ASC_KEY_ID`, `ASC_ISSUER_ID` | the App Store Connect key's identifiers |
+| `ASC_KEY_CONTENT` | the `AuthKey_<KEY_ID>.p8`, base64 encoded |
+| `MATCH_PASSWORD` | the match repo passphrase (in the login keychain locally) |
+| `MATCH_GIT_BASIC_AUTHORIZATION` | base64 of `user:token` for a token that can read `Im-Fran/certificates` |
+
 ### Releasing the GitHub build
 
 ```bash
