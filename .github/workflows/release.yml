@@ -88,7 +88,7 @@ jobs:
         run: bundle exec fastlane release_github version:"$VERSION" build_number:"$BUILD"
 
       - name: Upload the DMG to the workflow run
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: OpenBattery-${{ steps.version.outputs.version }}-dmg
           path: build/*.dmg
