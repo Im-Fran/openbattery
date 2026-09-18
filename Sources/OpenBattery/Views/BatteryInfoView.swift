@@ -14,25 +14,41 @@ struct BatteryInfoView: View {
     private var snapshot: BatterySnapshot { monitor.snapshot }
 
     var body: some View {
-        TabView {
-            ChargeTab(snapshot: snapshot, log: monitor.chargeLog)
-                .tabItem { Label("Charge", systemImage: "battery.75percent") }
-            PowerTab(snapshot: snapshot, load: monitor.load)
-                .tabItem { Label("Power", systemImage: "bolt") }
-            HealthTab(snapshot: snapshot, log: monitor.capacityLog)
-                .tabItem { Label("Health", systemImage: "heart.text.square") }
-            if let lifetime = snapshot.lifetime {
-                LifetimeTab(lifetime: lifetime)
-                    .tabItem { Label("Lifetime", systemImage: "clock.arrow.circlepath") }
-            }
+        Group {
+            // Without a battery every tab would be a wall of em dashes, which
+            // reads as a broken window rather than as a Mac that has no battery.
+            if snapshot.isPresent { tabs } else { noBattery }
         }
         // Tall enough for the longest tab, so the window keeps still while
-        // tabbing; wide enough for three stat tiles to sit side by side
-        // without their titles wrapping.
+        // tabbing; wide enough for three stat tiles to sit side by side.
         .frame(minWidth: 440, idealWidth: 500, minHeight: 420, idealHeight: 520)
         // On the window, not on each tab: switching tabs must not move the count.
         .onAppear { monitor.beginDetailUpdates() }
         .onDisappear { monitor.endDetailUpdates() }
+    }
+
+    private var tabs: some View {
+        TabView {
+            ChargeTab(snapshot: snapshot, log: monitor.chargeLog)
+                .tabItem { Label("Charge", systemImage: "battery.75percent") }
+                .keyboardShortcut("1")
+            PowerTab(snapshot: snapshot, load: monitor.load)
+                .tabItem { Label("Power", systemImage: "bolt") }
+                .keyboardShortcut("2")
+            HealthTab(snapshot: snapshot, log: monitor.capacityLog)
+                .tabItem { Label("Health", systemImage: "heart.text.square") }
+                .keyboardShortcut("3")
+            if let lifetime = snapshot.lifetime {
+                LifetimeTab(lifetime: lifetime)
+                    .tabItem { Label("Lifetime", systemImage: "clock.arrow.circlepath") }
+                    .keyboardShortcut("4")
+            }
+        }
+    }
+
+    private var noBattery: some View {
+        ContentUnavailableView("No Battery", systemImage: "battery.slash",
+                               description: Text("This Mac doesn't have a built-in battery."))
     }
 }
 
@@ -47,8 +63,9 @@ private struct ChargeTab: View {
             HeroHeader(symbol: snapshot.isCharging ? "battery.100percent.bolt" : "battery.100percent",
                        variableValue: snapshot.isPresent ? Double(snapshot.percentage) / 100 : 0,
                        tint: snapshot.chargeTint,
-                       value: snapshot.isPresent ? "\(snapshot.percentage)" : "—",
+                       value: snapshot.isPresent ? "\(snapshot.percentage)" : Fmt.unavailable,
                        unit: "%",
+                       spokenUnit: "percent",
                        status: snapshot.statusText,
                        meta: meta)
         } tiles: {
@@ -89,6 +106,7 @@ private struct PowerTab: View {
                        tint: snapshot.isPluggedIn ? .blue : snapshot.chargeTint,
                        value: Fmt.decimal(headlineWatts),
                        unit: "W",
+                       spokenUnit: "watts",
                        status: status,
                        meta: meta)
         } tiles: {
@@ -96,7 +114,7 @@ private struct PowerTab: View {
             StatTile("Battery voltage", Fmt.volts(snapshot.volts))
             StatTile("Battery current", Fmt.amps(snapshot.amps))
         } detail: {
-            DetailSection("Last 60 seconds", caption: "system load") {
+            DetailSection("System load", caption: "last 60 seconds") {
                 LoadChart(samples: load, isAvailable: snapshot.systemWatts != nil)
             }
         }
@@ -146,16 +164,17 @@ private struct HealthTab: View {
                        tint: tint,
                        value: Fmt.decimal(snapshot.healthPercent),
                        unit: "%",
+                       spokenUnit: "percent",
                        status: status,
                        meta: meta)
         } tiles: {
             StatTile("Cycles", cycles)
-            StatTile("Age", snapshot.ageInDays.map { "\(Fmt.integer($0)) days" } ?? "—")
+            StatTile("Age", Fmt.count(snapshot.ageInDays, "day"))
             StatTile("Nominal", Fmt.mAh(snapshot.nominalCapacityMAh))
         } detail: {
             DetailSection("Last 12 months", caption: "capacity retained") {
                 BucketChart(buckets: retained,
-                            tint: tint == .orange ? .orange : .green,
+                            tint: isHealthy == false ? .orange : .green,
                             domain: 0...100,
                             label: { "\($0)%" },
                             axis: .month,
@@ -163,8 +182,9 @@ private struct HealthTab: View {
             }
             InfoRows {
                 InfoRow("Manufactured", Fmt.date(snapshot.manufactureDate))
-                InfoRow("Serial number", snapshot.serialNumber ?? "—")
-                InfoRow("Gauge", snapshot.deviceName ?? "—")
+                // Spelled out: VoiceOver reads a serial number as a word.
+                InfoRow("Serial number", snapshot.serialNumber ?? Fmt.unavailable, spellsOut: true)
+                InfoRow("Gauge", snapshot.deviceName ?? Fmt.unavailable)
             }
         }
     }
@@ -223,6 +243,7 @@ private struct LifetimeTab: View {
                        tint: .orange,
                        value: Fmt.decimal(lifetime.averageTemperature),
                        unit: "°C avg",
+                       spokenUnit: "degrees Celsius average",
                        status: status,
                        meta: meta)
         } tiles: {
@@ -248,10 +269,10 @@ private struct LifetimeTab: View {
 
     private var meta: String {
         guard let raw = lifetime.operatingTimeRaw else {
-            return "\(Fmt.integer(lifetime.temperatureSamples)) samples"
+            return Fmt.count(lifetime.temperatureSamples, "sample")
         }
         let days = BatteryDecoding.temperatureRecordDays(operatingTimeRawHours: raw)
-        return "\(Fmt.days(days)) recorded  ·  \(Fmt.integer(lifetime.temperatureSamples)) samples"
+        return "\(Fmt.days(days)) recorded  ·  \(Fmt.count(lifetime.temperatureSamples, "sample"))"
     }
 
     private var temperatureRange: String {
@@ -275,6 +296,13 @@ private struct LifetimeTab: View {
 }
 
 // MARK: - Shared layout
+
+extension ShapeStyle where Self == Color {
+    /// Quieter than a reading, louder than chrome: `.secondary` is about 4:1
+    /// on a light window, under the 4.5:1 that text carrying or naming a
+    /// number has to clear. Used for every label that qualifies a value.
+    static var subdued: Color { Color.primary.opacity(0.7) }
+}
 
 /// The shape every tab takes: headline, three tiles, detail underneath.
 private struct HeroTab<Tiles: View, Detail: View>: View {
@@ -303,6 +331,9 @@ private struct HeroHeader: View {
     let tint: Color
     let value: String
     let unit: String
+    /// How the unit should be said, where the written form is an abbreviation
+    /// VoiceOver would mangle ("°C avg").
+    var spokenUnit: String? = nil
     let status: String
     let meta: String
 
@@ -325,9 +356,11 @@ private struct HeroHeader: View {
                     Text(value)
                         .font(.system(size: 42, weight: .semibold, design: .rounded))
                         .monospacedDigit()
+                    // Subordinate to the figure, but it is half the reading:
+                    // .secondary measures under 4:1 on a light window.
                     Text(unit)
                         .font(.title3.weight(.medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.subdued)
                 }
                 // Not tinted: system green on a light window is about 1.8:1,
                 // nowhere near the 4.5:1 this text needs. The symbol carries
@@ -337,16 +370,17 @@ private struct HeroHeader: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Text(meta)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.subdued)
                     .monospacedDigit()
                     .textSelection(.enabled)
             }
             Spacer(minLength: 0)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(value) \(unit)")
-        .accessibilityValue("\(status). \(meta)")
+        .accessibilityLabel(Fmt.spoken("\(value) \(spokenUnit ?? unit)"))
+        .accessibilityValue(Fmt.spoken("\(status). \(meta)"))
     }
+
 }
 
 /// One boxed reading. Title small and quiet, value large and selectable.
@@ -361,7 +395,12 @@ private struct StatTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
+            // Two lines rather than shrinking: at the minimum window width a
+            // title like "Temperature range" needs less than 10 pt to fit on
+            // one, and 10 pt is the macOS floor. Reserved so the three tiles
+            // keep the same height whether or not their titles wrap.
             SectionLabel(title)
+                .lineLimit(2, reservesSpace: true)
             Text(value)
                 .font(.title3.weight(.medium))
                 .monospacedDigit()
@@ -372,11 +411,32 @@ private struct StatTile: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.quaternary.opacity(0.4)))
+        .tileBackground()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
-        .accessibilityValue(value)
+        .accessibilityValue(Fmt.spoken(value))
     }
+}
+
+/// The boxed surface the tiles and the extremes sit on.
+private struct TileBackground: ViewModifier {
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    func body(content: Content) -> some View {
+        content.background {
+            let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+            // The bare hierarchical tier, not an opacity of it: dimming
+            // quaternary any further leaves a box that cannot be seen.
+            shape.fill(.quaternary)
+                // Increase Contrast asks for stronger separation, not the
+                // same fill.
+                .overlay { shape.strokeBorder(.separator, lineWidth: contrast == .increased ? 1 : 0) }
+        }
+    }
+}
+
+private extension View {
+    func tileBackground() -> some View { modifier(TileBackground()) }
 }
 
 /// A titled block under the tiles: the chart, or whatever else the tab ends on.
@@ -402,7 +462,11 @@ private struct DetailSection<Content: View>: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
+            // Names the chart for VoiceOver, which would otherwise land on
+            // an unlabelled group of marks.
             content
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("\(title), \(caption)")
         }
     }
 }
@@ -413,13 +477,17 @@ private struct SectionLabel: View {
     init(_ text: String) { self.text = text }
 
     var body: some View {
+        // Names a value, so it reads at the same tier as one; and no scale
+        // factor, because 10 pt is already the smallest legible size on macOS.
         Text(text)
             .font(.caption2.weight(.semibold))
             .textCase(.uppercase)
             .tracking(0.4)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
+            .foregroundStyle(.subdued)
+            // Take the width offered and grow downwards. Without this the
+            // label is laid out at its ideal single-line width and truncates
+            // in a narrow tile instead of wrapping.
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -447,12 +515,19 @@ private struct BucketChart: View {
             if let value = bucket.value {
                 BarMark(x: .value("When", bucket.date, unit: axis),
                         y: .value("Value", value))
+                    // Accepted risk, light mode: system green is 2.22:1 on
+                    // the window and 1.98:1 on the plot fill, under the 3:1
+                    // WCAG asks of a graphical object (dark mode is ~6.9:1).
+                    // Kept because the reading never depends on resolving a
+                    // bar against its background — the axis is labelled, every
+                    // mark carries a spoken value, and the chart is named.
                     .foregroundStyle(tint.gradient)
                     .cornerRadius(4)
                     .accessibilityLabel(Text(bucket.date, format: axisLabelFormat))
                     .accessibilityValue(label(value))
             }
         }
+        .chartPlotStyle { $0.background(Color.primary.opacity(0.06)) }
         .chartYScale(domain: domain)
         .chartYAxis {
             AxisMarks(values: [domain.lowerBound, (domain.lowerBound + domain.upperBound) / 2,
@@ -512,6 +587,7 @@ private struct LoadChart: View {
                 .accessibilityLabel(Text(sample.date, format: .dateTime.hour().minute().second()))
                 .accessibilityValue(Fmt.watts(sample.watts))
         }
+        .chartPlotStyle { $0.background(Color.primary.opacity(0.06)) }
         .chartYScale(domain: 0...ceiling)
         .chartYAxis {
             AxisMarks(values: .automatic(desiredCount: 3)) { value in
@@ -539,7 +615,7 @@ private struct EmptyChart: View {
     var body: some View {
         Text(text)
             .font(.callout)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(.subdued)
             .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity, minHeight: 120)
             .padding(.horizontal, 20)
@@ -559,7 +635,7 @@ private struct ExtremeBars: View {
             row("Max discharge", discharge, .orange)
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.quaternary.opacity(0.4)))
+        .tileBackground()
     }
 
     private func row(_ title: String, _ milliamps: Int?, _ tint: Color) -> some View {
@@ -584,7 +660,7 @@ private struct ExtremeBars: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
-        .accessibilityValue(Fmt.mA(milliamps))
+        .accessibilityValue(Fmt.spoken(Fmt.mA(milliamps)))
     }
 }
 
@@ -603,16 +679,18 @@ private struct InfoRows<Content: View>: View {
 private struct InfoRow: View {
     let label: String
     let value: String
+    let spellsOut: Bool
 
-    init(_ label: String, _ value: String) {
+    init(_ label: String, _ value: String, spellsOut: Bool = false) {
         self.label = label
         self.value = value
+        self.spellsOut = spellsOut
     }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             Text(label)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.subdued)
             Spacer(minLength: 12)
             Text(value)
                 .multilineTextAlignment(.trailing)
@@ -620,6 +698,17 @@ private struct InfoRow: View {
                 .textSelection(.enabled)
         }
         .font(.callout)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue(spokenValue)
+    }
+
+    /// The spell-out has to ride on the value itself: the children are
+    /// ignored, so the same attribute set on the Text above never reaches
+    /// VoiceOver.
+    private var spokenValue: Text {
+        var spoken = AttributedString(Fmt.spoken(value))
+        spoken.accessibilitySpeechSpellsOutCharacters = spellsOut
+        return Text(spoken)
     }
 }
