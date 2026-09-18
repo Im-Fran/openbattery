@@ -60,20 +60,46 @@ private struct ChargeTab: View {
 
     var body: some View {
         HeroTab {
-            HeroHeader(symbol: snapshot.isCharging ? "battery.100percent.bolt" : "battery.100percent",
+            HeroHeader(subject: "Charge",
+                       symbol: snapshot.isCharging ? "battery.100percent.bolt" : "battery.100percent",
                        variableValue: snapshot.isPresent ? Double(snapshot.percentage) / 100 : 0,
                        tint: snapshot.chargeTint,
                        value: snapshot.isPresent ? "\(snapshot.percentage)" : Fmt.unavailable,
                        unit: "%",
                        spokenUnit: "percent",
                        status: snapshot.statusText,
-                       meta: meta)
+                       meta: meta,
+                       info: """
+                       How much charge is left, as the battery's own gauge \
+                       reports it — the same figure macOS shows in the menu \
+                       bar. The line below is what it adds up to in mAh, and \
+                       how warm the battery is right now.
+                       """)
         } tiles: {
-            StatTile("Time to full", Fmt.minutes(snapshot.timeToFull))
-            StatTile("Time to empty", Fmt.minutes(snapshot.timeToEmpty))
-            StatTile("Low Power Mode", snapshot.lowPowerMode ? "On" : "Off")
+            StatTile("Time to full", Fmt.minutes(snapshot.timeToFull), info: """
+                     The gauge's own estimate of how long until the battery is \
+                     full, at the rate power is flowing right now. It moves as \
+                     that rate changes, and it is blank until the gauge has \
+                     enough to go on.
+                     """)
+            StatTile("Time to empty", Fmt.minutes(snapshot.timeToEmpty), info: """
+                     The gauge's own estimate of how long the charge will last \
+                     at the rate the Mac is using it right now. Doing something \
+                     heavier shortens it immediately.
+                     """)
+            StatTile("Low Power Mode", snapshot.lowPowerMode ? "On" : "Off", info: """
+                     macOS's own setting, not OpenBattery's. It lowers display \
+                     brightness and background activity to stretch the charge. \
+                     Turn it on in System Settings, under Battery.
+                     """)
         } detail: {
-            DetailSection("Last 12 hours", caption: "charge level") {
+            DetailSection("Last 12 hours", caption: "charge level", info: """
+                          The charge OpenBattery wrote down while it was \
+                          running, one bar per hour. Hours are empty where \
+                          nothing was recorded — the Mac was asleep, or the \
+                          app was not running. The battery keeps no history of \
+                          its own, so this starts from the day you install it.
+                          """) {
                 BucketChart(buckets: log.bucketed(),
                             tint: .green,
                             domain: 0...100,
@@ -101,20 +127,44 @@ private struct PowerTab: View {
 
     var body: some View {
         HeroTab {
-            HeroHeader(symbol: snapshot.isPluggedIn ? "powerplug.fill" : "battery.100percent",
+            HeroHeader(subject: "Power draw",
+                       symbol: snapshot.isPluggedIn ? "powerplug.fill" : "battery.100percent",
                        variableValue: snapshot.isPluggedIn ? nil : Double(snapshot.percentage) / 100,
                        tint: snapshot.isPluggedIn ? .blue : snapshot.chargeTint,
                        value: Fmt.decimal(headlineWatts),
                        unit: "W",
                        spokenUnit: "watts",
                        status: status,
-                       meta: meta)
+                       meta: meta,
+                       info: """
+                       With an adapter connected, what the adapter is \
+                       delivering. On battery, what the battery is giving up. \
+                       The line below describes the adapter itself.
+                       """)
         } tiles: {
-            StatTile("Battery", Fmt.watts(snapshot.batteryWatts, signed: true))
-            StatTile("Battery voltage", Fmt.volts(snapshot.volts))
-            StatTile("Battery current", Fmt.amps(snapshot.amps))
+            StatTile("Battery", Fmt.watts(snapshot.batteryWatts, signed: true), info: """
+                     Power flowing into the battery (+) or out of it (−). \
+                     Near zero on a full battery that is plugged in: the \
+                     adapter is carrying the Mac and the battery is idle.
+                     """)
+            StatTile("Battery voltage", Fmt.volts(snapshot.volts), info: """
+                     The voltage across the battery's cells. It climbs as the \
+                     battery charges and falls as it drains, which is one of \
+                     the things the gauge uses to work out the percentage.
+                     """)
+            StatTile("Battery current", Fmt.amps(snapshot.amps), info: """
+                     The current flowing into or out of the battery. Multiply \
+                     it by the voltage beside it and you get the watts on the \
+                     left.
+                     """)
         } detail: {
-            DetailSection("System load", caption: "last 60 seconds") {
+            DetailSection("System load", caption: "last 60 seconds", info: """
+                          What the machine itself is drawing, sampled every \
+                          few seconds while this window is open. It is the \
+                          load, not the charging: a Mac drawing more than the \
+                          adapter supplies makes up the difference from the \
+                          battery.
+                          """) {
                 LoadChart(samples: load, isAvailable: snapshot.systemWatts != nil)
             }
         }
@@ -160,19 +210,45 @@ private struct HealthTab: View {
         HeroTab {
             // The tab's own symbol, not the Charge tab's battery: a part-filled
             // battery means "this much charge" everywhere else on the screen.
-            HeroHeader(symbol: "heart.text.square",
+            HeroHeader(subject: "Battery health",
+                       symbol: "heart.text.square",
                        tint: tint,
                        value: Fmt.decimal(snapshot.healthPercent),
                        unit: "%",
                        spokenUnit: "percent",
                        status: status,
-                       meta: meta)
+                       meta: meta,
+                       info: """
+                       How much of its original capacity the battery still \
+                       holds: what it charges to today, over what it was built \
+                       to hold. Apple calls a battery normal above 80% and \
+                       suggests service below it.
+                       """)
         } tiles: {
-            StatTile("Cycles", Fmt.integer(snapshot.cycleCount))
-            StatTile("Age", Fmt.count(snapshot.ageInDays, "day"))
-            StatTile("Nominal", Fmt.mAh(snapshot.nominalCapacityMAh))
+            StatTile("Cycles", Fmt.integer(snapshot.cycleCount), info: """
+                     A cycle is one full charge's worth of use, not one \
+                     plug-in: two days at half a charge each count as one. \
+                     There is no published number of cycles at which a Mac \
+                     needs service, so this is a count, not a countdown.
+                     """)
+            StatTile("Age", Fmt.count(snapshot.ageInDays, "day"), info: """
+                     Days since the cell was manufactured, which is not the \
+                     same as how long you have had the Mac — a battery is \
+                     usually some months old by the time the machine ships.
+                     """)
+            StatTile("Nominal", Fmt.mAh(snapshot.nominalCapacityMAh), info: """
+                     The capacity the gauge advertises to the system. Apple \
+                     does not document how it differs from the measured full \
+                     charge above, which is the figure the health percentage \
+                     uses; expect them to be close but not identical.
+                     """)
         } detail: {
-            DetailSection("Last 12 months", caption: "capacity retained") {
+            DetailSection("Last 12 months", caption: "capacity retained", info: """
+                          Full charge capacity as a share of the design \
+                          capacity, written down once a day. Months are empty \
+                          until they pass with OpenBattery installed — a year \
+                          of this chart takes a year to fill.
+                          """) {
                 BucketChart(buckets: retained,
                             tint: isHealthy == false ? .orange : .green,
                             domain: 0...100,
@@ -181,10 +257,22 @@ private struct HealthTab: View {
                             empty: "Capacity is written down once a day. The months fill in as they pass.")
             }
             InfoRows {
-                InfoRow("Manufactured", Fmt.date(snapshot.manufactureDate))
+                InfoRow("Manufactured", Fmt.date(snapshot.manufactureDate), info: """
+                        When the cell was made, decoded from the battery's own \
+                        serial data. Apple does not publish the encoding, so \
+                        treat it as close rather than exact.
+                        """)
                 // Spelled out: VoiceOver reads a serial number as a word.
-                InfoRow("Serial number", snapshot.serialNumber ?? Fmt.unavailable, spellsOut: true)
-                InfoRow("Gauge", snapshot.deviceName ?? Fmt.unavailable)
+                InfoRow("Serial number", snapshot.serialNumber ?? Fmt.unavailable, info: """
+                        The battery's serial number, not the Mac's. A service \
+                        centre uses it to tell whether the cell has been \
+                        replaced.
+                        """, spellsOut: true)
+                InfoRow("Gauge", snapshot.deviceName ?? Fmt.unavailable, info: """
+                        The chip inside the battery that measures it. Every \
+                        number in this window comes from it, which is why they \
+                        can differ slightly from what other tools report.
+                        """)
             }
         }
     }
@@ -236,19 +324,44 @@ private struct LifetimeTab: View {
 
     var body: some View {
         HeroTab {
-            HeroHeader(symbol: "thermometer.medium",
+            HeroHeader(subject: "Average temperature",
+                       symbol: "thermometer.medium",
                        tint: .orange,
                        value: Fmt.decimal(lifetime.averageTemperature),
                        unit: "°C avg",
                        spokenUnit: "degrees Celsius average",
                        status: status,
-                       meta: meta)
+                       meta: meta,
+                       info: """
+                       The average temperature the battery has recorded across \
+                       its whole life, not today. Heat is what ages a \
+                       lithium-ion cell fastest, so a low lifetime average is \
+                       worth more than a cool afternoon.
+                       """)
         } tiles: {
-            StatTile("Temperature range", temperatureRange)
-            StatTile("Voltage range", voltageRange)
-            StatTile("Operating time", operatingTime)
+            StatTile("Temperature range", temperatureRange, info: """
+                     The coldest and the hottest the battery has ever recorded \
+                     since it was made. A single hot afternoon stays in this \
+                     figure forever.
+                     """)
+            StatTile("Voltage range", voltageRange, info: """
+                     The lowest and highest voltage the battery has ever \
+                     recorded. The low end is roughly how empty it has been \
+                     allowed to get.
+                     """)
+            StatTile("Operating time", operatingTime, info: """
+                     The gauge's own lifetime counter. Its unit is not \
+                     documented by Apple — hours is the reading that matches \
+                     reality on the machines this was checked against, so take \
+                     it as an order of magnitude.
+                     """)
         } detail: {
-            DetailSection("Extremes", caption: "peak charge / discharge current") {
+            DetailSection("Extremes", caption: "peak charge / discharge current", info: """
+                          The largest currents the battery has ever recorded, \
+                          measured against each other. Charging peaks are \
+                          usually the higher of the two, since discharge is \
+                          spread across whatever the Mac is doing.
+                          """) {
                 ExtremeBars(charge: lifetime.maximumChargeCurrentMA,
                             discharge: lifetime.maximumDischargeCurrentMA)
             }
@@ -323,6 +436,9 @@ private struct HeroTab<Tiles: View, Detail: View>: View {
 /// The headline reading: a symbol that shows it, the number, and two lines
 /// that say what it means and what it is made of.
 private struct HeroHeader: View {
+    /// What the headline reading is called. The status line is a sentence,
+    /// so it cannot name the info button.
+    let subject: String
     let symbol: String
     var variableValue: Double? = nil
     let tint: Color
@@ -333,6 +449,7 @@ private struct HeroHeader: View {
     var spokenUnit: String? = nil
     let status: String
     let meta: String
+    let info: String
 
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
@@ -353,11 +470,14 @@ private struct HeroHeader: View {
                     Text(value)
                         .font(.system(size: 42, weight: .semibold, design: .rounded))
                         .monospacedDigit()
+                        .accessibilityHidden(true)
                     // Subordinate to the figure, but it is half the reading:
                     // .secondary measures under 4:1 on a light window.
                     Text(unit)
                         .font(.title3.weight(.medium))
                         .foregroundStyle(.subdued)
+                        .accessibilityHidden(true)
+                    InfoButton(title: subject, text: info)
                 }
                 // Not tinted: system green on a light window is about 1.8:1,
                 // nowhere near the 4.5:1 this text needs. The symbol carries
@@ -365,29 +485,73 @@ private struct HeroHeader: View {
                 Text(status)
                     .font(.callout.weight(.medium))
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityHidden(true)
                 Text(meta)
                     .font(.caption)
                     .foregroundStyle(.subdued)
                     .monospacedDigit()
                     .textSelection(.enabled)
+                    // The container speaks all of this; only the button below
+                    // has to stay a stop of its own.
+                    .accessibilityHidden(true)
             }
             Spacer(minLength: 0)
         }
-        .accessibilityElement(children: .combine)
+        // Contain, not combine: the info button has to stay reachable.
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(Fmt.spoken("\(value) \(spokenUnit ?? unit)"))
         .accessibilityValue(Fmt.spoken("\(status). \(meta)"))
     }
 
 }
 
+/// What a reading means, for the readings whose name does not say it.
+///
+/// A button rather than a tooltip alone: hover help is invisible to anyone
+/// navigating by keyboard or VoiceOver, and these explanations are the only
+/// place several of these numbers are defined at all.
+private struct InfoButton: View {
+    let title: String
+    let text: String
+
+    @State private var isShowing = false
+
+    var body: some View {
+        Button { isShowing = true } label: {
+            Image(systemName: "info.circle")
+                .imageScale(.small)
+                // A glyph, not text: 3:1 is the bar, which .secondary clears,
+                // and it keeps the button quieter than the label beside it.
+                .foregroundStyle(.secondary)
+                // The glyph is 11 pt; macOS wants at least 20 pt of target.
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        // The tooltip says what the button does; the popover holds the
+        // explanation, because hover reaches neither keyboard nor VoiceOver.
+        .help("About \(title)")
+        .accessibilityLabel("About \(title)")
+        .popover(isPresented: $isShowing, arrowEdge: .bottom) {
+            Text(text)
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 240, alignment: .leading)
+                .padding(12)
+        }
+    }
+}
+
 /// One boxed reading. Title small and quiet, value large and selectable.
 private struct StatTile: View {
     let title: String
     let value: String
+    let info: String
 
-    init(_ title: String, _ value: String) {
+    init(_ title: String, _ value: String, info: String) {
         self.title = title
         self.value = value
+        self.info = info
     }
 
     var body: some View {
@@ -396,22 +560,32 @@ private struct StatTile: View {
             // title like "Temperature range" needs less than 10 pt to fit on
             // one, and 10 pt is the macOS floor. Reserved so the three tiles
             // keep the same height whether or not their titles wrap.
-            SectionLabel(title)
-                .lineLimit(2, reservesSpace: true)
+            HStack(alignment: .top, spacing: 2) {
+                SectionLabel(title)
+                    .lineLimit(2, reservesSpace: true)
+                    // The value below is announced with this as its label.
+                    .accessibilityHidden(true)
+                Spacer(minLength: 0)
+                InfoButton(title: title, text: info)
+                    // Sits above the title's own box so the two line up.
+                    .offset(x: 6, y: -4)
+            }
             Text(value)
                 .font(.title3.weight(.medium))
                 .monospacedDigit()
                 .textSelection(.enabled)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
+                .accessibilityLabel(title)
+                .accessibilityValue(Fmt.spoken(value))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .tileBackground()
-        .accessibilityElement(children: .ignore)
+        // Contain, not ignore: the info button has to stay reachable.
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(title)
-        .accessibilityValue(Fmt.spoken(value))
     }
 }
 
@@ -440,11 +614,14 @@ private extension View {
 private struct DetailSection<Content: View>: View {
     let title: String
     let caption: String
+    let info: String
     @ViewBuilder let content: Content
 
-    init(_ title: String, caption: String, @ViewBuilder content: () -> Content) {
+    init(_ title: String, caption: String, info: String,
+         @ViewBuilder content: () -> Content) {
         self.title = title
         self.caption = caption
+        self.info = info
         self.content = content()
     }
 
@@ -452,12 +629,15 @@ private struct DetailSection<Content: View>: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 SectionLabel(title).accessibilityAddTraits(.isHeader)
+                InfoButton(title: title, text: info)
                 Spacer()
                 // Never .tertiary: at this size it measures under 2:1 against
                 // the window in both appearances.
                 Text(caption)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                    // Spoken as part of the chart's own name, below.
+                    .accessibilityHidden(true)
             }
             // Names the chart for VoiceOver, which would otherwise land on
             // an unlabelled group of marks.
@@ -750,11 +930,13 @@ private struct InfoRows<Content: View>: View {
 private struct InfoRow: View {
     let label: String
     let value: String
+    let info: String
     let spellsOut: Bool
 
-    init(_ label: String, _ value: String, spellsOut: Bool = false) {
+    init(_ label: String, _ value: String, info: String, spellsOut: Bool = false) {
         self.label = label
         self.value = value
+        self.info = info
         self.spellsOut = spellsOut
     }
 
@@ -762,21 +944,25 @@ private struct InfoRow: View {
         HStack(alignment: .firstTextBaseline) {
             Text(label)
                 .foregroundStyle(.subdued)
+                // The value below is announced with this as its label.
+                .accessibilityHidden(true)
+            InfoButton(title: label, text: info)
             Spacer(minLength: 12)
             Text(value)
                 .multilineTextAlignment(.trailing)
                 .monospacedDigit()
                 .textSelection(.enabled)
+                .accessibilityLabel(label)
+                .accessibilityValue(spokenValue)
         }
         .font(.callout)
-        .accessibilityElement(children: .ignore)
+        // Contain, not ignore: the info button has to stay reachable.
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(label)
-        .accessibilityValue(spokenValue)
     }
 
-    /// The spell-out has to ride on the value itself: the children are
-    /// ignored, so the same attribute set on the Text above never reaches
-    /// VoiceOver.
+    /// The spell-out has to ride on the value itself: an attribute set on a
+    /// child Text is dropped when the value is handed to accessibilityValue.
     private var spokenValue: Text {
         var spoken = AttributedString(Fmt.spoken(value))
         // Nothing to spell out when there is no reading: "Not available" is
