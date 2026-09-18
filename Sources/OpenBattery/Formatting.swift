@@ -1,4 +1,16 @@
 import Foundation
+import SwiftUI
+
+extension BatterySnapshot {
+    /// The colours of the system battery icon. Never the only cue: the status
+    /// text, the percentage and the Low Power label all say it in words too.
+    var chargeTint: Color {
+        if isCharging || (isPluggedIn && isFullyCharged) { return .green }
+        if lowPowerMode { return .yellow }
+        if percentage <= 20 && !isPluggedIn { return .red }
+        return .secondary
+    }
+}
 
 /// Display formatting shared by the popover and the detail window.
 enum Fmt {

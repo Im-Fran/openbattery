@@ -74,20 +74,11 @@ struct PopoverView: View {
             if snapshot.isPresent {
                 Gauge(value: Double(snapshot.percentage), in: 0...100) { EmptyView() }
                     .gaugeStyle(.linearCapacity)
-                    .tint(gaugeTint)
+                    .tint(snapshot.chargeTint)
                     // The percentage above already says this.
                     .accessibilityHidden(true)
             }
         }
-    }
-
-    /// The colours of the system battery icon. The status text, the
-    /// percentage and the Low Power label carry the same meaning in words.
-    private var gaugeTint: Color {
-        if snapshot.isCharging || (snapshot.isPluggedIn && snapshot.isFullyCharged) { return .green }
-        if snapshot.lowPowerMode { return .yellow }
-        if snapshot.percentage <= 20 && !snapshot.isPluggedIn { return .red }
-        return .secondary
     }
 
     private var power: some View {
