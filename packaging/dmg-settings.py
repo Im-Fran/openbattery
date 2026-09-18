@@ -21,8 +21,8 @@ symlinks = {"Applications": "/Applications"}
 
 background = defines["background"]
 
-# Window content is 640x400, the size of the background image.
-window_rect = ((200, 120), (640, 400))
+# Window content is 800x500, the size of the background image.
+window_rect = ((200, 120), (800, 500))
 default_view = "icon-view"
 show_status_bar = False
 show_tab_view = False
@@ -38,7 +38,8 @@ label_pos = "bottom"
 text_size = 12
 icon_size = 128
 
+# Mirrored in packaging/dmg-background.swift, which draws to these centres.
 icon_locations = {
-    appname: (160, 190),
-    "Applications": (480, 190),
+    appname: (200, 230),
+    "Applications": (600, 230),
 }
