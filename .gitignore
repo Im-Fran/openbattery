@@ -4,3 +4,4 @@ OpenBattery.xcodeproj/
 .DS_Store
 *.xcuserdatad
 .build/
+.claude/worktrees/

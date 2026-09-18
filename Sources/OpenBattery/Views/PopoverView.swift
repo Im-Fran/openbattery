@@ -12,6 +12,10 @@ struct PopoverView: View {
     /// menu bar extras (Wi-Fi, Battery, Sound).
     private static let inset: CGFloat = 14
 
+    /// Said once, so the spoken version cannot drift from the written one.
+    private static let keepAwakeCost =
+        "Keeping the display on uses more power and drains the battery faster."
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -55,46 +59,37 @@ struct PopoverView: View {
                     // Text alongside the leaf so colour is not the only cue.
                     Label("Low Power", systemImage: "leaf.fill")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.subdued)
                         .accessibilityLabel("Low Power Mode on")
                         .help("Low Power Mode is on")
                 }
             }
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(snapshot.isPresent ? "\(snapshot.percentage)%" : "—")
+                Text(snapshot.isPresent ? "\(snapshot.percentage)%" : Fmt.unavailable)
                     .font(.system(.largeTitle, design: .rounded).weight(.semibold))
                     .monospacedDigit()
                 VStack(alignment: .leading, spacing: 1) {
                     Text(snapshot.statusText)
                     if let capacity = snapshot.currentCapacityMAh {
-                        Text(Fmt.mAh(capacity)).font(.caption).foregroundStyle(.secondary)
+                        Text(Fmt.mAh(capacity)).font(.caption).foregroundStyle(.subdued)
                     }
                 }
             }
             if snapshot.isPresent {
                 Gauge(value: Double(snapshot.percentage), in: 0...100) { EmptyView() }
                     .gaugeStyle(.linearCapacity)
-                    .tint(gaugeTint)
+                    .tint(snapshot.chargeTint)
                     // The percentage above already says this.
                     .accessibilityHidden(true)
             }
         }
     }
 
-    /// The colours of the system battery icon. The status text, the
-    /// percentage and the Low Power label carry the same meaning in words.
-    private var gaugeTint: Color {
-        if snapshot.isCharging || (snapshot.isPluggedIn && snapshot.isFullyCharged) { return .green }
-        if snapshot.lowPowerMode { return .yellow }
-        if snapshot.percentage <= 20 && !snapshot.isPluggedIn { return .red }
-        return .secondary
-    }
-
     private var power: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Power")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.subdued)
                 .accessibilityAddTraits(.isHeader)
             stat("Input", Fmt.watts(snapshot.adapterWatts))
             stat("Battery", Fmt.watts(snapshot.batteryWatts, signed: true))
@@ -114,24 +109,36 @@ struct PopoverView: View {
                 .font(.callout)
             // Colour lives on the icon; orange text fails contrast in light
             // mode. Full label colour, because a warning has to be readable.
-            Label("Keeping the display on uses more power and drains the battery faster.",
-                  systemImage: "exclamationmark.triangle.fill")
-                .symbolRenderingMode(.multicolor)
+            //
+            // The triangle is earned only while the display is actually being
+            // held on. With the switch off this is a description of what it
+            // does, and a standing alarm for a state you are not in is how
+            // people learn to ignore alarms.
+            Label(Self.keepAwakeCost, systemImage: caffeine.isActive
+                  ? "exclamationmark.triangle.fill" : "info.circle")
+                // Multicolor only for the triangle: info.circle has a
+                // multicolor variant too, and it renders blue, which reads as
+                // a button in a label that is not one.
+                .symbolRenderingMode(caffeine.isActive ? .multicolor : .monochrome)
                 .font(.callout)
-                .accessibilityLabel(
-                    "Warning. Keeping the display on uses more power and drains the battery faster.")
+                // Take the width offered and grow downwards. Without this the
+                // label is laid out at its ideal single-line width and the
+                // warning is cut off mid-sentence.
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityLabel(caffeine.isActive ? "Warning. \(Self.keepAwakeCost)"
+                                                      : Self.keepAwakeCost)
         }
     }
 
     private func stat(_ title: String, _ value: String) -> some View {
         HStack {
-            Text(title)
+            Text(title).foregroundStyle(.subdued)
             Spacer()
-            Text(value).monospacedDigit().foregroundStyle(.secondary)
+            Text(value).monospacedDigit()
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
-        .accessibilityValue(value)
+        .accessibilityValue(Fmt.spoken(value))
     }
 
     private var footer: some View {
@@ -159,7 +166,7 @@ struct PopoverView: View {
             Spacer()
             if let shortcut {
                 // Decorative: VoiceOver already announces `.keyboardShortcut`.
-                Text(shortcut).foregroundStyle(.secondary).accessibilityHidden(true)
+                Text(shortcut).foregroundStyle(.subdued).accessibilityHidden(true)
             }
         }
     }
