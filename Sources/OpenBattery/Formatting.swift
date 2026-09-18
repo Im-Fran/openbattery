@@ -33,6 +33,13 @@ enum Fmt {
         value.map { String(format: "%.1f °C", $0) } ?? "—"
     }
 
+    /// A bare number, for a headline reading whose unit is shown beside it or
+    /// for the low end of a range that ends in one.
+    static func decimal(_ value: Double?, places: Int = 1) -> String {
+        guard let value else { return "—" }
+        return String(format: "%.\(places)f", value)
+    }
+
     static func percent(_ value: Double?, decimals: Int = 1) -> String {
         value.map { String(format: "%.\(decimals)f%%", $0) } ?? "—"
     }
@@ -68,8 +75,9 @@ enum Fmt {
     }
 
     /// OpenBattery's interface is English, so numbers and dates are formatted
-    /// in English too instead of following the system locale.
-    private static let locale = Locale(identifier: "en_US")
+    /// in English too instead of following the system locale. The chart axes
+    /// format their own dates, so they read this one too.
+    static let locale = Locale(identifier: "en_US")
 
     private static let numberFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
