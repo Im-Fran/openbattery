@@ -37,7 +37,6 @@ enum BatteryReader {
         snapshot.volts = int(battery, "Voltage").map { Double($0) / 1000 }
         snapshot.amps = int(battery, "Amperage").map { Double($0) / 1000 }
         snapshot.cycleCount = int(battery, "CycleCount")
-        snapshot.designCycleCount = int(battery, "DesignCycleCount9C")
         snapshot.serialNumber = string(battery, "Serial")
         snapshot.deviceName = string(battery, "DeviceName")
 
@@ -108,7 +107,6 @@ enum BatteryReader {
         lifetime.maximumVoltage = number(raw["MaximumPackVoltage"]).map { $0.doubleValue / 1000 }
         lifetime.operatingTimeRaw = number(raw["TotalOperatingTime"])?.intValue
         lifetime.temperatureSamples = number(raw["TemperatureSamples"])?.intValue
-        lifetime.cycleCountLastQmax = number(raw["CycleCountLastQmax"])?.intValue
         snapshot.lifetime = lifetime
     }
 

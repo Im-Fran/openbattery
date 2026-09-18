@@ -38,7 +38,6 @@ struct BatterySnapshot: Equatable {
     var designCapacityMAh: Int?
     var nominalCapacityMAh: Int?
     var cycleCount: Int?
-    var designCycleCount: Int?
     var serialNumber: String?
     var deviceName: String?
     var manufactureDate: Date?
@@ -57,7 +56,6 @@ struct BatterySnapshot: Equatable {
         var maximumVoltage: Double?
         var operatingTimeRaw: Int?
         var temperatureSamples: Int?
-        var cycleCountLastQmax: Int?
     }
 
     // MARK: Derived

@@ -4,6 +4,7 @@ import SwiftUI
 /// change, so it stays cheap.
 struct MenuBarLabel: View {
     let snapshot: BatterySnapshot
+    let isCaffeinated: Bool
 
     @AppStorage(MenuBarConfig.itemsKey) private var rawItems = MenuBarConfig.default.rawItems
     @AppStorage(MenuBarConfig.iconKey) private var showsIcon = MenuBarConfig.default.showsIcon
@@ -20,6 +21,11 @@ struct MenuBarLabel: View {
             if let text = config.text(for: snapshot) {
                 Text(text)
             }
+            if isCaffeinated {
+                // The only way to notice the toggle is still on without
+                // opening the popover. Spoken as part of the label below.
+                Image(systemName: "cup.and.saucer.fill")
+            }
         }
         // One spoken summary instead of a symbol name; any other picked
         // fields follow as the value.
@@ -31,8 +37,11 @@ struct MenuBarLabel: View {
     }
 
     private var accessibilityText: String {
-        guard snapshot.isPresent else { return "No battery" }
-        return "Battery \(snapshot.percentage)%" + (snapshot.isCharging ? ", charging" : "")
+        let awake = isCaffeinated ? ", keeping display awake" : ""
+        guard snapshot.isPresent else { return "No battery" + awake }
+        return "Battery \(snapshot.percentage)%"
+            + (snapshot.isCharging ? ", charging" : "")
+            + awake
     }
 
     private var symbolName: String {

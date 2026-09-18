@@ -49,6 +49,7 @@ targets:
       - path: Sources/OpenBattery/BatterySnapshot.swift
       - path: Sources/OpenBattery/Formatting.swift
       - path: Sources/OpenBattery/MenuBarConfig.swift
+      - path: Sources/OpenBattery/SampleLog.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: cl.franciscosolis.openbattery.tests

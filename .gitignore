@@ -7,3 +7,4 @@ OpenBattery.xcodeproj/
 fastlane/report.xml
 fastlane/Preview.html
 fastlane/.env
+.claude/worktrees/
