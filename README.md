@@ -40,7 +40,10 @@ which macOS now handles itself (see [below](#-how-the-charge-limit-works)).
   under the gear button → **Menu Bar**.
 - **Popover** — charge in % and mAh, time to full or empty, adapter input,
   battery flow and system load in watts, temperature, and Low Power Mode.
-- **Battery Info window** — the full picture, grouped for reading.
+- **Battery Info window** — the full picture, four tabs with the same layout,
+  charting the charge of the last 12 hours and the capacity retained over the
+  last 12 months from readings the app writes down itself (nothing leaves the
+  Mac, and gaps show where it was asleep).
 - **Charge limit guide** — one click to macOS's own Charge Limit setting.
 - **Launch at login** — via `SMAppService`, toggled from the popover.
 
@@ -60,10 +63,13 @@ What the Battery Info window shows:
 
 | Group | Fields |
 |---|---|
-| Charge | percentage, mAh, status, time to full, time to empty, Low Power Mode, temperature |
-| Power | battery watts (signed), system load, adapter input, voltage, current, adapter description / rating / V / A |
-| Health | full charge capacity, design capacity, nominal capacity, health %, cycle count, manufacture date, age in days, serial number, gas gauge model |
-| Lifetime log | average temperature, temperature range, max charge rate, max discharge rate, voltage range, total operating time, temperature record period |
+| Charge | percentage and status, mAh of full charge, temperature, time to full, time to empty, Low Power Mode, and the charge level of the last 12 hours |
+| Power | adapter input or battery draw, where the power is going, adapter description / rating / V / A, battery watts (signed), voltage, current, and system load over the last 60 seconds |
+| Health | health %, full charge against design capacity, cycle count against the rated one, age, nominal capacity, capacity retained over the last 12 months, manufacture date, serial number, gas gauge model |
+| Lifetime log | average temperature and how it compares to the ideal range, days recorded, temperature range, voltage range, total operating time, and the peak charge / discharge currents |
+
+Each tab is laid out the same way: one headline reading, three numbers beside
+it, and the history or breakdown underneath.
 
 ---
 
