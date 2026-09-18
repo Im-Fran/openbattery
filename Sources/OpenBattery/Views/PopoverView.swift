@@ -12,6 +12,10 @@ struct PopoverView: View {
     /// menu bar extras (Wi-Fi, Battery, Sound).
     private static let inset: CGFloat = 14
 
+    /// Said once, so the spoken version cannot drift from the written one.
+    private static let keepAwakeCost =
+        "Keeping the display on uses more power and drains the battery faster."
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -105,16 +109,21 @@ struct PopoverView: View {
                 .font(.callout)
             // Colour lives on the icon; orange text fails contrast in light
             // mode. Full label colour, because a warning has to be readable.
-            Label("Keeping the display on uses more power and drains the battery faster.",
-                  systemImage: "exclamationmark.triangle.fill")
+            //
+            // The triangle is earned only while the display is actually being
+            // held on. With the switch off this is a description of what it
+            // does, and a standing alarm for a state you are not in is how
+            // people learn to ignore alarms.
+            Label(Self.keepAwakeCost, systemImage: caffeine.isActive
+                  ? "exclamationmark.triangle.fill" : "info.circle")
                 .symbolRenderingMode(.multicolor)
                 .font(.callout)
                 // Take the width offered and grow downwards. Without this the
                 // label is laid out at its ideal single-line width and the
                 // warning is cut off mid-sentence.
                 .fixedSize(horizontal: false, vertical: true)
-                .accessibilityLabel(
-                    "Warning. Keeping the display on uses more power and drains the battery faster.")
+                .accessibilityLabel(caffeine.isActive ? "Warning. \(Self.keepAwakeCost)"
+                                                      : Self.keepAwakeCost)
         }
     }
 
