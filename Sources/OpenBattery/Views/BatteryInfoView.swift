@@ -8,6 +8,9 @@ import SwiftUI
 /// them never asks anyone to learn a new layout.
 struct BatteryInfoView: View {
     static let windowID = "battery-info"
+    /// Where the build that can read connected devices lives. The App Store one
+    /// cannot, and saying so without saying where would be a dead end.
+    static let downloadURL = URL(string: "https://github.com/Im-Fran/openbattery/releases")!
 
     /// Which tab is showing. In defaults rather than in @State so the View
     /// menu, which lives in another scene entirely, can move it — and so the
@@ -61,14 +64,24 @@ struct BatteryInfoView: View {
     @AppStorage(Tab.key) private var tab = Tab.charge
     @State private var isPolling = false
     @EnvironmentObject private var monitor: BatteryMonitor
+    @EnvironmentObject private var devices: DeviceMonitor
+    @Environment(\.openURL) private var openURL
 
-    private var snapshot: BatterySnapshot { monitor.snapshot }
+    /// The battery this window is showing. Nil only for a device that has not
+    /// answered yet — the Mac's own reading is always there.
+    private var snapshot: BatterySnapshot? {
+        switch devices.source {
+        case .mac: return monitor.snapshot
+        case .device: return devices.snapshot
+        }
+    }
+
+    private var isDevice: Bool { devices.source != .mac }
 
     var body: some View {
-        Group {
-            // Without a battery every tab would be a wall of em dashes, which
-            // reads as a broken window rather than as a Mac that has no battery.
-            if snapshot.isPresent { tabs } else { noBattery }
+        VStack(spacing: 0) {
+            DeviceSourcePicker()
+            content
         }
         // Tall enough for the longest tab, so the window keeps still while
         // tabbing; wide enough for three stat tiles to sit side by side.
@@ -84,6 +97,17 @@ struct BatteryInfoView: View {
             .publisher(for: NSApplication.didHideNotification)) { _ in setPolling(false) }
         .onReceive(NotificationCenter.default
             .publisher(for: NSApplication.didUnhideNotification)) { _ in updatePolling() }
+        // Choosing a device replaces the whole content area — tabs, then a wait
+        // of up to twelve seconds, then either readings or a failure. Someone
+        // navigating by VoiceOver would otherwise hear nothing at all.
+        .onChange(of: devices.source) { _, source in
+            guard case .device = source, let name = devices.selectedName else { return }
+            AccessibilityNotification.Announcement("Reading \(name)").post()
+        }
+        .onChange(of: devices.failure) { _, failure in
+            guard let failure, let message = failure.errorDescription else { return }
+            AccessibilityNotification.Announcement(message).post()
+        }
     }
 
     /// Nothing is lost by pausing: IOKit still wakes the monitor on every
@@ -101,14 +125,50 @@ struct BatteryInfoView: View {
         }
     }
 
-    /// The monitor counts clients, so begin and end have to stay paired.
+    /// Both monitors count clients, so begin and end have to stay paired.
     private func setPolling(_ wanted: Bool) {
         guard wanted != isPolling else { return }
         isPolling = wanted
-        if wanted { monitor.beginDetailUpdates() } else { monitor.endDetailUpdates() }
+        if wanted {
+            monitor.beginDetailUpdates()
+            devices.start()
+        } else {
+            monitor.endDetailUpdates()
+            devices.stop()
+        }
     }
 
-    private var shownTab: Binding<Tab> {
+    @ViewBuilder
+    private var content: some View {
+        if let snapshot {
+            // Without a battery every tab would be a wall of em dashes, which
+            // reads as a broken window rather than as a Mac that has no battery.
+            if snapshot.isPresent { tabs(snapshot) } else { noBattery }
+        } else if let failure = devices.failure {
+            // The title names which device, so the message can stay about what
+            // happened and what to do next.
+            ContentUnavailableView {
+                Label(devices.selectedName.map { "Can't Read \($0)" } ?? "Can't Read This Device",
+                      systemImage: "exclamationmark.triangle")
+            } description: {
+                Text(failure.localizedDescription)
+            } actions: {
+                // The one error whose recovery is somewhere else entirely — and
+                // only for the build that cannot do it at all. A button, not a
+                // link: this is the actions slot of a macOS empty state.
+                if failure == .transportUnavailable, DeviceError.isSandboxed {
+                    Button("Download OpenBattery") { openURL(Self.downloadURL) }
+                }
+            }
+        } else {
+            // Reading a device is a round trip over a cable or the network, so
+            // unlike the Mac there is a moment with nothing to show.
+            ProgressView("Reading the battery…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func shownTab(_ snapshot: BatterySnapshot) -> Binding<Tab> {
         Binding(get: { Tab.shown(tab, hasLifetime: snapshot.lifetime != nil) },
                 set: { tab = $0 })
     }
@@ -116,15 +176,19 @@ struct BatteryInfoView: View {
     /// The shortcuts live in the View menu rather than on the tab items: a
     /// command reachable only by clicking is invisible to anyone reading the
     /// menu bar to find out what the window can do.
-    private var tabs: some View {
-        TabView(selection: shownTab) {
-            ChargeTab(snapshot: snapshot, log: monitor.chargeLog)
+    private func tabs(_ snapshot: BatterySnapshot) -> some View {
+        TabView(selection: shownTab(snapshot)) {
+            ChargeTab(snapshot: snapshot,
+                      log: isDevice ? devices.chargeLog : monitor.chargeLog,
+                      isDevice: isDevice)
                 .tabItem { Label(Tab.charge.title, systemImage: Tab.charge.symbol) }
                 .tag(Tab.charge)
-            PowerTab(snapshot: snapshot, load: monitor.load)
+            PowerTab(snapshot: snapshot, load: isDevice ? devices.load : monitor.load)
                 .tabItem { Label(Tab.power.title, systemImage: Tab.power.symbol) }
                 .tag(Tab.power)
-            HealthTab(snapshot: snapshot, log: monitor.capacityLog)
+            HealthTab(snapshot: snapshot,
+                      log: isDevice ? devices.capacityLog : monitor.capacityLog,
+                      isDevice: isDevice)
                 .tabItem { Label(Tab.health.title, systemImage: Tab.health.symbol) }
                 .tag(Tab.health)
             if let lifetime = snapshot.lifetime {
@@ -138,7 +202,9 @@ struct BatteryInfoView: View {
 
     private var noBattery: some View {
         ContentUnavailableView("No Battery", systemImage: "battery.slash",
-                               description: Text("This Mac doesn't have a built-in battery."))
+                               description: Text(isDevice
+                                   ? "This device isn't reporting a battery."
+                                   : "This Mac doesn't have a built-in battery."))
     }
 }
 
@@ -147,6 +213,10 @@ struct BatteryInfoView: View {
 private struct ChargeTab: View {
     let snapshot: BatterySnapshot
     let log: SampleLog
+    /// A connected iPhone or iPad rather than this Mac: it reports a cycle count
+    /// where the Mac reports Low Power Mode, and its history only covers the
+    /// minutes this window has been open.
+    let isDevice: Bool
 
     var body: some View {
         HeroTab {
@@ -174,16 +244,35 @@ private struct ChargeTab: View {
                      """)
             StatTile("Time to empty", Fmt.minutes(snapshot.timeToEmpty), info: """
                      The gauge's own estimate of how long the charge will last \
-                     at the rate the Mac is using it right now. Doing something \
+                     at the rate it is being used right now. Doing something \
                      heavier shortens it immediately.
                      """)
-            StatTile("Low Power Mode", snapshot.lowPowerMode ? "On" : "Off", info: """
-                     macOS's own setting, not OpenBattery's. It lowers display \
-                     brightness and background activity to stretch the charge. \
-                     Turn it on in System Settings, under Battery.
-                     """)
+            if isDevice {
+                // Low Power Mode is read from this Mac, so on a device the tile
+                // would be a confident lie. The cycle count is the number
+                // someone plugged a phone in to see anyway.
+                StatTile("Cycles", Fmt.integer(snapshot.cycleCount), info: """
+                         A cycle is one full charge's worth of use, not one \
+                         plug-in: two days at half a charge each count as one. \
+                         Apple rates an iPhone battery to keep 80% of its \
+                         capacity for 1000 cycles.
+                         """)
+            } else {
+                StatTile("Low Power Mode", snapshot.lowPowerMode ? "On" : "Off", info: """
+                         macOS's own setting, not OpenBattery's. It lowers display \
+                         brightness and background activity to stretch the charge. \
+                         Turn it on in System Settings, under Battery.
+                         """)
+            }
         } detail: {
-            DetailSection("Last 12 hours", caption: "charge level", info: """
+            DetailSection(isDevice ? "This session" : "Last 12 hours",
+                          caption: "charge level",
+                          info: isDevice ? """
+                          The charge read since this window was opened, one bar \
+                          per hour. A device is only read while the window is \
+                          open — there is no cable to read down while it is \
+                          closed — so nothing is kept after you close it.
+                          """ : """
                           The charge OpenBattery wrote down while it was \
                           running, one bar per hour. Hours are empty where \
                           nothing was recorded — the Mac was asleep, or the \
@@ -195,7 +284,9 @@ private struct ChargeTab: View {
                             domain: 0...100,
                             label: { "\($0)%" },
                             axis: .hour,
-                            empty: "No readings yet. The chart fills in while OpenBattery is running.")
+                            empty: isDevice
+                                ? "The chart fills in while this window stays open."
+                                : "No readings yet. The chart fills in while OpenBattery is running.")
             }
         }
     }
@@ -207,7 +298,10 @@ private struct ChargeTab: View {
         } else {
             capacity = Fmt.mAh(snapshot.currentCapacityMAh)
         }
-        return "\(capacity)  ·  \(Fmt.celsius(snapshot.temperature))"
+        // A device publishes no temperature, and "·  —" reads as a broken line
+        // rather than as an absence.
+        guard let temperature = snapshot.temperature else { return capacity }
+        return "\(capacity)  ·  \(Fmt.celsius(temperature))"
     }
 }
 
@@ -235,7 +329,7 @@ private struct PowerTab: View {
             StatTile("Battery", Fmt.watts(snapshot.batteryWatts, signed: true), info: """
                      Power flowing into the battery (+) or out of it (−). \
                      Near zero on a full battery that is plugged in: the \
-                     adapter is carrying the Mac and the battery is idle.
+                     adapter is carrying the load and the battery is idle.
                      """)
             StatTile("Battery voltage", Fmt.volts(snapshot.volts), info: """
                      The voltage across the battery's cells. It climbs as the \
@@ -251,8 +345,8 @@ private struct PowerTab: View {
             DetailSection("System load", caption: "last 60 seconds", info: """
                           What the machine itself is drawing, sampled every \
                           few seconds while this window is open. It is the \
-                          load, not the charging: a Mac drawing more than the \
-                          adapter supplies makes up the difference from the \
+                          load, not the charging: anything drawing more than \
+                          the adapter supplies makes up the difference from the \
                           battery.
                           """) {
                 LoadChart(samples: load, isAvailable: snapshot.systemWatts != nil)
@@ -295,6 +389,9 @@ private struct PowerTab: View {
 private struct HealthTab: View {
     let snapshot: BatterySnapshot
     let log: SampleLog
+    /// A device reports no manufacture date and names no gauge, so the rows that
+    /// would show them are left out rather than left empty.
+    let isDevice: Bool
 
     var body: some View {
         HeroTab {
@@ -315,17 +412,32 @@ private struct HealthTab: View {
                        suggests service below it.
                        """)
         } tiles: {
-            StatTile("Cycles", Fmt.integer(snapshot.cycleCount), info: """
+            StatTile("Cycles", Fmt.integer(snapshot.cycleCount), info: isDevice ? """
+                     A cycle is one full charge's worth of use, not one \
+                     plug-in: two days at half a charge each count as one. \
+                     Apple rates an iPhone battery to keep 80% of its \
+                     capacity for 1000 cycles.
+                     """ : """
                      A cycle is one full charge's worth of use, not one \
                      plug-in: two days at half a charge each count as one. \
                      There is no published number of cycles at which a Mac \
                      needs service, so this is a count, not a countdown.
                      """)
-            StatTile("Age", Fmt.count(snapshot.ageInDays, "day"), info: """
-                     Days since the cell was manufactured, which is not the \
-                     same as how long you have had the Mac — a battery is \
-                     usually some months old by the time the machine ships.
-                     """)
+            if isDevice {
+                // No manufacture date comes over the wire, so the design
+                // capacity takes the slot: it is what the health percentage
+                // above is measured against.
+                StatTile("Design", Fmt.mAh(snapshot.designCapacityMAh), info: """
+                         The capacity the battery was built to hold. Health is \
+                         what it charges to today as a share of this figure.
+                         """)
+            } else {
+                StatTile("Age", Fmt.count(snapshot.ageInDays, "day"), info: """
+                         Days since the cell was manufactured, which is not the \
+                         same as how long you have had the Mac — a battery is \
+                         usually some months old by the time the machine ships.
+                         """)
+            }
             StatTile("Nominal", Fmt.mAh(snapshot.nominalCapacityMAh), info: """
                      The capacity the gauge advertises to the system. Apple \
                      does not document how it differs from the measured full \
@@ -347,22 +459,31 @@ private struct HealthTab: View {
                             empty: "Capacity is written down once a day. The months fill in as they pass.")
             }
             InfoRows {
-                InfoRow("Manufactured", Fmt.date(snapshot.manufactureDate), info: """
-                        When the cell was made, decoded from the battery's own \
-                        serial data. Apple does not publish the encoding, so \
-                        treat it as close rather than exact.
-                        """)
+                if !isDevice {
+                    InfoRow("Manufactured", Fmt.date(snapshot.manufactureDate), info: """
+                            When the cell was made, decoded from the battery's own \
+                            serial data. Apple does not publish the encoding, so \
+                            treat it as close rather than exact.
+                            """)
+                }
                 // Spelled out: VoiceOver reads a serial number as a word.
-                InfoRow("Serial number", snapshot.serialNumber ?? Fmt.unavailable, info: """
+                InfoRow("Serial number", snapshot.serialNumber ?? Fmt.unavailable,
+                        info: isDevice ? """
+                        The battery's serial number, not the device's. A \
+                        service centre uses it to tell whether the cell has \
+                        been replaced.
+                        """ : """
                         The battery's serial number, not the Mac's. A service \
                         centre uses it to tell whether the cell has been \
                         replaced.
                         """, spellsOut: true)
-                InfoRow("Gauge", snapshot.deviceName ?? Fmt.unavailable, info: """
-                        The chip inside the battery that measures it. Every \
-                        number in this window comes from it, which is why they \
-                        can differ slightly from what other tools report.
-                        """)
+                if !isDevice {
+                    InfoRow("Gauge", snapshot.deviceName ?? Fmt.unavailable, info: """
+                            The chip inside the battery that measures it. Every \
+                            number in this window comes from it, which is why they \
+                            can differ slightly from what other tools report.
+                            """)
+                }
             }
         }
     }
@@ -897,7 +1018,7 @@ private struct LoadChart: View {
         } else if isAvailable {
             EmptyChart(text: "Sampling system load…")
         } else {
-            EmptyChart(text: "This Mac doesn't report what the system is drawing.")
+            EmptyChart(text: "No system load is being reported.")
         }
     }
 

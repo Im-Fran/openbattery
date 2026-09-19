@@ -38,12 +38,36 @@ settings:
     Release-Direct:
       SWIFT_COMPILATION_MODE: wholemodule
 
+# Pinned to a minor version rather than `from`: the Xcode project is generated
+# and not committed, so its Package.resolved never reaches the repository and a
+# floating range would let CI resolve a version this code has never seen.
+packages:
+  swift-nio:
+    url: https://github.com/apple/swift-nio.git
+    minorVersion: 2.103.0
+  swift-nio-ssl:
+    url: https://github.com/apple/swift-nio-ssl.git
+    minorVersion: 2.37.5
+
 targets:
   OpenBattery:
     type: application
     platform: macOS
     sources:
       - Sources/OpenBattery
+    dependencies:
+      # Talking to a device means a plaintext plist handshake that then upgrades
+      # to mutual TLS on the same connection. Network.framework cannot upgrade a
+      # live stream and SecureTransport is deprecated, so NIO carries the
+      # transport and NIOSSL the upgrade.
+      - package: swift-nio
+        product: NIOCore
+      - package: swift-nio
+        product: NIOPosix
+      - package: swift-nio
+        product: NIOFoundationCompat
+      - package: swift-nio-ssl
+        product: NIOSSL
     settings:
       base:
         PRODUCT_NAME: OpenBattery
@@ -66,9 +90,22 @@ targets:
       - Tests
       - path: Sources/OpenBattery/BatteryDecoding.swift
       - path: Sources/OpenBattery/BatterySnapshot.swift
+      - path: Sources/OpenBattery/Devices/DeviceBattery.swift
+      - path: Sources/OpenBattery/Devices/PlistChannel.swift
       - path: Sources/OpenBattery/Formatting.swift
       - path: Sources/OpenBattery/MenuBarConfig.swift
       - path: Sources/OpenBattery/SampleLog.swift
+    dependencies:
+      # Only PlistChannel needs these, and only so the transport's deadline and
+      # framing can be tested against a stub usbmuxd.
+      - package: swift-nio
+        product: NIOCore
+      - package: swift-nio
+        product: NIOPosix
+      - package: swift-nio
+        product: NIOFoundationCompat
+      - package: swift-nio-ssl
+        product: NIOSSL
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: cl.franciscosolis.openbattery.tests
