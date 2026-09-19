@@ -46,6 +46,12 @@ which macOS now handles itself (see [below](#-how-the-charge-limit-works)).
   charting the charge of the last 12 hours and the capacity retained over the
   last 12 months from readings the app writes down itself (nothing leaves the
   Mac, and gaps show where it was asleep).
+- **Connected iPhones and iPads** — pick a device at the top of the Battery Info
+  window and the same tabs show its battery instead: charge, cycle count, health
+  against design capacity, volts and amps. Over USB or over Wi-Fi, with no
+  companion app and nothing to set up beyond trusting this Mac from the device
+  once, which is the same tap Finder asks for. Not available in the App Store
+  build — see below.
 - **Charge limit guide** — one click to macOS's own Charge Limit setting.
 - **Launch at login** — via `SMAppService`, toggled from the popover.
 
@@ -73,6 +79,30 @@ What the Battery Info window shows:
 Each tab is laid out the same way: one headline reading, three numbers beside
 it, and the history or breakdown underneath.
 
+### Reading a connected device
+
+An iPhone's cycle count is only reachable through `usbmuxd` → `lockdownd` →
+`com.apple.mobile.diagnostics_relay`, and the App Sandbox denies the socket that
+path starts with. So there are two builds of the same code:
+
+| Build | Where | Devices |
+|---|---|---|
+| App Store / TestFlight | sandboxed | no |
+| [GitHub releases](https://github.com/Im-Fran/openbattery/releases) | notarized DMG | yes |
+
+Nothing else differs, and no pairing of its own happens: macOS already holds the
+pair record for every device trusted in Finder, and usbmuxd hands it over. A
+device that has never been trusted stays unreadable until its owner connects it
+by USB and taps Trust. Wi-Fi works for devices already trusted that way.
+
+A device is only read while the Battery Info window is open, once every five
+seconds, and its charge history is kept in memory only — the capacity history,
+which moves over months, is the one thing stored per device.
+
+What a device reports differs from a Mac: no temperature, no manufacture date
+and no gas-gauge lifetime log, so those rows are left out rather than left
+empty.
+
 ---
 
 ## 🛠 Tech Stack
@@ -82,6 +112,7 @@ it, and the history or breakdown underneath.
 | Language | Swift 5, deployment target macOS 14 |
 | UI | SwiftUI (`MenuBarExtra`, `Window`, `Settings`) |
 | Data | IOKit — `IORegistryEntryCreateCFProperty`, `IOPSNotificationCreateRunLoopSource` |
+| Devices | usbmuxd and lockdown over [SwiftNIO](https://github.com/apple/swift-nio) and [NIOSSL](https://github.com/apple/swift-nio-ssl) |
 | Login item | ServiceManagement (`SMAppService`) |
 | Project generation | [XcodeGen](https://github.com/yonaskolb/XcodeGen) from `project.yml` |
 | Tests | XCTest |
@@ -325,8 +356,16 @@ Sources/OpenBattery/
   BatteryMonitor.swift          IOKit notifications, refresh policy
   Formatting.swift              display formatting
   MenuBarConfig.swift           which fields the menu bar shows
-  Views/                        menu bar label, popover, info window
-Tests/                          decoding and menu bar configuration
+  Devices/                      reading a connected iPhone or iPad
+    PlistChannel.swift          framed plists over usbmuxd, with TLS and a deadline
+    USBMux.swift                list devices, open a port, read the pair record
+    PairRecord.swift            the credentials macOS already holds
+    LockdownClient.swift        the session, and the diagnostics relay over it
+    DeviceBattery.swift         pure decoding of a device's AppleSmartBattery
+    DeviceSession.swift         one device's live connection
+    DeviceMonitor.swift         the device list and the selected reading
+  Views/                        menu bar label, popover, info window, device picker
+Tests/                          decoding, framing, deadlines, menu bar configuration
 ```
 
 ---
