@@ -5,6 +5,7 @@ import SwiftUI
 struct OpenBatteryApp: App {
     @StateObject private var monitor = BatteryMonitor()
     @StateObject private var caffeine = CaffeineController()
+    @StateObject private var devices = DeviceMonitor()
 
     init() { DockPolicy.start() }
 
@@ -21,6 +22,7 @@ struct OpenBatteryApp: App {
         Window("Battery Info", id: BatteryInfoView.windowID) {
             BatteryInfoView()
                 .environmentObject(monitor)
+                .environmentObject(devices)
         }
         .windowResizability(.contentMinSize)
         .defaultPosition(.center)

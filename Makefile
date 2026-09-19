@@ -1,9 +1,16 @@
 # OpenBattery — build, sign and install from the command line.
 PROJECT      := OpenBattery.xcodeproj
 SCHEME       := OpenBattery
-CONFIG       ?= Release
+# Release-Direct by default: the build people download and run, and the only one
+# that can read a connected iPhone. Pass CONFIG=Release for the sandboxed App
+# Store shape.
+CONFIG       ?= Release-Direct
 BUILD_DIR    := build
-APP          := $(BUILD_DIR)/$(CONFIG)/OpenBattery.app
+# A derived data path rather than SYMROOT: overriding SYMROOT leaves the Swift
+# package targets unable to find each other's modules ("Unable to resolve module
+# dependency: 'SwiftASN1'"), and the device code depends on nothing but packages.
+DERIVED_DATA := $(BUILD_DIR)/DerivedData
+APP          := $(DERIVED_DATA)/Build/Products/$(CONFIG)/OpenBattery.app
 INSTALL_DIR  ?= /Applications
 # Extra settings passed to xcodebuild, e.g. CODE_SIGNING_ALLOWED=NO on CI where
 # no signing certificate exists.
@@ -23,12 +30,12 @@ $(PROJECT): project.yml
 ## Build and sign the app
 build: $(PROJECT)
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration $(CONFIG) \
-		SYMROOT=$(BUILD_DIR) $(XCODEBUILD_FLAGS) build
+		-derivedDataPath $(DERIVED_DATA) $(XCODEBUILD_FLAGS) build
 
 ## Run the unit tests
 test: $(PROJECT)
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration Debug \
-		SYMROOT=$(BUILD_DIR) $(XCODEBUILD_FLAGS) test
+		-derivedDataPath $(DERIVED_DATA) $(XCODEBUILD_FLAGS) test
 
 ## Build, then (re)launch the menu bar app
 run: build
