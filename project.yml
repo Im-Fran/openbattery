@@ -6,6 +6,17 @@ options:
   createIntermediateGroups: true
   groupSortPosition: top
 
+# Two shapes of the same app. Release is the sandboxed build the App Store and
+# TestFlight take; Release-Direct is the notarized DMG, which is not sandboxed
+# because reading a connected iPhone needs /var/run/usbmuxd and the sandbox
+# denies that socket. Debug matches the direct build so devices work while
+# developing. The code is identical in all three: device support detects the
+# socket at runtime rather than being compiled in or out.
+configs:
+  Debug: debug
+  Release: release
+  Release-Direct: release
+
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -24,6 +35,8 @@ settings:
   configs:
     Release:
       SWIFT_COMPILATION_MODE: wholemodule
+    Release-Direct:
+      SWIFT_COMPILATION_MODE: wholemodule
 
 targets:
   OpenBattery:
@@ -36,9 +49,15 @@ targets:
         PRODUCT_NAME: OpenBattery
         PRODUCT_BUNDLE_IDENTIFIER: cl.franciscosolis.openbattery
         INFOPLIST_FILE: Sources/OpenBattery/Resources/Info.plist
-        CODE_SIGN_ENTITLEMENTS: Sources/OpenBattery/Resources/OpenBattery.entitlements
         COMBINE_HIDPI_IMAGES: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      configs:
+        Debug:
+          CODE_SIGN_ENTITLEMENTS: Sources/OpenBattery/Resources/OpenBattery-Direct.entitlements
+        Release:
+          CODE_SIGN_ENTITLEMENTS: Sources/OpenBattery/Resources/OpenBattery.entitlements
+        Release-Direct:
+          CODE_SIGN_ENTITLEMENTS: Sources/OpenBattery/Resources/OpenBattery-Direct.entitlements
 
   OpenBatteryTests:
     type: bundle.unit-test

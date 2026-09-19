@@ -84,12 +84,14 @@ platform :mac do
     )
   end
 
-  desc "Build a Release OpenBattery.app into build/"
+  # Release is the sandboxed App Store build; Release-Direct is the notarized
+  # DMG, which needs the sandbox off to reach a connected device.
+  desc "Build an OpenBattery.app into build/"
   lane :build do |options|
     build_mac_app(
       project: PROJECT,
       scheme: SCHEME,
-      configuration: "Release",
+      configuration: options.fetch(:configuration, "Release"),
       export_method: options.fetch(:export_method, "mac-application"),
       codesigning_identity: options[:codesigning_identity],
       export_options: options[:export_options],
@@ -168,6 +170,7 @@ platform :mac do
     match(type: "developer_id", api_key: key, readonly: true)
 
     app = build(
+      configuration: "Release-Direct",
       export_method: "developer-id",
       codesigning_identity: "Developer ID Application",
       version: options[:version],

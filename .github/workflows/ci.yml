@@ -31,5 +31,11 @@ jobs:
       - name: Test
         run: make test XCODEBUILD_FLAGS='CODE_SIGNING_ALLOWED=NO'
 
-      - name: Build (Release)
-        run: make build XCODEBUILD_FLAGS='CODE_SIGNING_ALLOWED=NO'
+      # Both shapes of the app: the notarized direct build and the sandboxed one
+      # the App Store takes. A broken entitlements file in either should fail
+      # here rather than at tag time.
+      - name: Build (Release-Direct)
+        run: make build CONFIG=Release-Direct XCODEBUILD_FLAGS='CODE_SIGNING_ALLOWED=NO'
+
+      - name: Build (Release, App Store)
+        run: make build CONFIG=Release XCODEBUILD_FLAGS='CODE_SIGNING_ALLOWED=NO'

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The build that ships as a notarized DMG, and the one used while
+	     developing. Deliberately empty: it is not sandboxed, and outside the
+	     sandbox none of these keys grant anything.
+
+	     Why it exists at all: reading the battery of a connected iPhone means
+	     talking to /var/run/usbmuxd, and the sandbox denies connecting to a
+	     unix socket outside the container. The App Store build keeps the
+	     sandbox and has no device support — see OpenBattery.entitlements.
+	     Hardened runtime stays on for both. -->
+</dict>
+</plist>

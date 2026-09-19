@@ -1,7 +1,10 @@
 # OpenBattery — build, sign and install from the command line.
 PROJECT      := OpenBattery.xcodeproj
 SCHEME       := OpenBattery
-CONFIG       ?= Release
+# Release-Direct by default: the build people download and run, and the only one
+# that can read a connected iPhone. Pass CONFIG=Release for the sandboxed App
+# Store shape.
+CONFIG       ?= Release-Direct
 BUILD_DIR    := build
 APP          := $(BUILD_DIR)/$(CONFIG)/OpenBattery.app
 INSTALL_DIR  ?= /Applications
