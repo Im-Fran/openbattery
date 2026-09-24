@@ -1,6 +1,6 @@
 # Signing material lives encrypted in a private repo, so a new machine or a CI
 # runner can sign without anyone exporting a .p12 by hand.
-git_url("https://github.com/Im-Fran/certificates.git")
+git_url(ENV["MATCH_REPOSITORY_URL"])
 storage_mode("git")
 
 platform("macos")
