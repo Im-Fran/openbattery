@@ -37,7 +37,7 @@ Run the unit tests
 [bundle exec] fastlane mac build
 ```
 
-Build a Release OpenBattery.app into build/
+Build an OpenBattery.app into build/
 
 ### mac dmg
 
