@@ -8,6 +8,10 @@ ROOT = File.expand_path("..", __dir__)
 PROJECT = "OpenBattery.xcodeproj"
 SCHEME = "OpenBattery"
 BUILD_DIR = "build"
+# The app project carries its team from project.yml; the SPM package projects
+# do not, and gym applies CODE_SIGN_IDENTITY to all of them alike — without a
+# team they fail with "Signing for ... requires a development team".
+TEAM_ID = File.read(File.join(ROOT, "project.yml"))[/DEVELOPMENT_TEAM:\s*(\S+)/, 1]
 
 # Keep the match passphrase out of any file on disk: on the machine that created
 # it, it comes from the login keychain. CI passes MATCH_PASSWORD as a secret.
@@ -199,7 +203,14 @@ DMGBUILD_VERSION = "1.6.7"
 # project.yml says stands.
 def build_xcargs(options)
   args = []
-  args << "CODE_SIGNING_ALLOWED=NO" if options[:signed] == false
+  if options[:signed] == false
+    args << "CODE_SIGNING_ALLOWED=NO"
+  else
+    args << "DEVELOPMENT_TEAM=#{TEAM_ID}"
+    # And manual signing to go with it: the packages default to automatic, which
+    # conflicts with the identity gym passes them.
+    args << "CODE_SIGN_STYLE=Manual"
+  end
   args << "MARKETING_VERSION=#{options[:version]}" if options[:version]
   args << "CURRENT_PROJECT_VERSION=#{options[:build_number]}" if options[:build_number]
   args << "PROVISIONING_PROFILE_SPECIFIER='#{options[:profile]}'" if options[:profile]
