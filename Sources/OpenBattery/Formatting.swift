@@ -10,6 +10,12 @@ extension BatterySnapshot {
         if percentage <= 20 && !isPluggedIn { return .red }
         return .secondary
     }
+
+    /// `chargeTint` for a large bar: `.secondary` on an ordinary discharge
+    /// reads as disabled at that size, and the system battery icon is plain.
+    var heroTint: Color {
+        chargeTint == .secondary ? .primary : chargeTint
+    }
 }
 
 extension ShapeStyle where Self == Color {
@@ -93,6 +99,12 @@ enum Fmt {
         // the order, but an all-numeric date is ambiguous on any day of the
         // month that could also be a month, which is a third of them.
         return value.formatted(.dateTime.day().month(.abbreviated).year().locale(dateLocale))
+    }
+
+    /// "5 minutes ago", in the interface's English. Clamped to now: the date
+    /// comes from another device's clock, which may run a little ahead.
+    static func relative(_ date: Date, now: Date = .now) -> String {
+        min(date, now).formatted(.relative(presentation: .named).locale(dateLocale))
     }
 
     static func minutes(_ value: Int?) -> String {

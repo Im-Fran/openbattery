@@ -3,6 +3,7 @@ options:
   bundleIdPrefix: cl.franciscosolis
   deploymentTarget:
     macOS: "14.0"
+    iOS: "18.0"
   createIntermediateGroups: true
   groupSortPosition: top
 
@@ -55,6 +56,9 @@ targets:
     platform: macOS
     sources:
       - Sources/OpenBattery
+      # Shared with the iOS app: both write their readings to the same iCloud
+      # container and read each other's back.
+      - Sources/Sync
     dependencies:
       # Talking to a device means a plaintext plist handshake that then upgrades
       # to mutual TLS on the same connection. Network.framework cannot upgrade a
@@ -76,18 +80,23 @@ targets:
         COMBINE_HIDPI_IMAGES: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       configs:
-        Debug:
-          CODE_SIGN_ENTITLEMENTS: Sources/OpenBattery/Resources/OpenBattery-Direct.entitlements
+        # No entitlements in Debug: iCloud needs a provisioning profile, and a
+        # Mac app claiming iCloud without one is killed at launch. Without the
+        # entitlement the sync store simply stays local.
         Release:
           CODE_SIGN_ENTITLEMENTS: Sources/OpenBattery/Resources/OpenBattery.entitlements
         Release-Direct:
           CODE_SIGN_ENTITLEMENTS: Sources/OpenBattery/Resources/OpenBattery-Direct.entitlements
+          # On the app target only: passed on the command line it would reach
+          # the Swift packages too, which refuse any profile. Match creates it.
+          PROVISIONING_PROFILE_SPECIFIER: "match Direct cl.franciscosolis.openbattery macos"
 
   OpenBatteryTests:
     type: bundle.unit-test
     platform: macOS
     sources:
       - Tests
+      - Sources/Sync
       - path: Sources/OpenBattery/BatteryDecoding.swift
       - path: Sources/OpenBattery/BatterySnapshot.swift
       - path: Sources/OpenBattery/Devices/DeviceBattery.swift
@@ -111,6 +120,32 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: cl.franciscosolis.openbattery.tests
         GENERATE_INFOPLIST_FILE: YES
 
+  # The iPhone and iPad companion: reads its own battery, publishes it to
+  # iCloud, and shows every other device that does the same — including the
+  # health a Mac reads off this phone over a cable, which iOS never tells an app.
+  OpenBatteryiOS:
+    type: application
+    platform: iOS
+    sources:
+      - Sources/OpenBatteryiOS
+      - Sources/Sync
+      - path: Sources/OpenBattery/BatterySnapshot.swift
+      - path: Sources/OpenBattery/BatteryDecoding.swift
+      - path: Sources/OpenBattery/Formatting.swift
+    settings:
+      base:
+        PRODUCT_NAME: OpenBattery
+        # One App ID for both platforms: its iCloud and Push capabilities are
+        # configured once, and the two apps are one product to the person.
+        PRODUCT_BUNDLE_IDENTIFIER: cl.franciscosolis.openbattery
+        INFOPLIST_FILE: Sources/OpenBatteryiOS/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Sources/OpenBatteryiOS/Resources/OpenBatteryiOS.entitlements
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "Apple Development"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_HARDENED_RUNTIME: NO
+
 schemes:
   OpenBattery:
     build:
@@ -122,3 +157,9 @@ schemes:
     test:
       config: Debug
       targets: [OpenBatteryTests]
+  OpenBatteryiOS:
+    build:
+      targets:
+        OpenBatteryiOS: all
+    run:
+      config: Debug

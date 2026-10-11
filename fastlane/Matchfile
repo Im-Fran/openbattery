@@ -5,3 +5,6 @@ storage_mode("git")
 
 platform("macos")
 app_identifier(["cl.franciscosolis.openbattery"])
+# The iOS app shares this App ID but signs automatically in Xcode, so match
+# only manages the macOS profiles. The Mac profiles must include the iCloud container
+# iCloud.cl.franciscosolis.openbattery; see docs/icloud-setup.md.

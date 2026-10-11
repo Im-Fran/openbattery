@@ -16,7 +16,15 @@ INSTALL_DIR  ?= /Applications
 # no signing certificate exists.
 XCODEBUILD_FLAGS ?=
 
-.PHONY: all project build test run install uninstall clean
+# The iOS companion builds for the simulator, Debug, with its own derived data
+# so it never shares a products folder with the Mac app.
+IOS_SCHEME       := OpenBatteryiOS
+IOS_DERIVED_DATA := $(BUILD_DIR)/DerivedData-iOS
+IOS_APP          := $(IOS_DERIVED_DATA)/Build/Products/Debug-iphonesimulator/OpenBattery.app
+IOS_BUNDLE_ID    := cl.franciscosolis.openbattery
+SIM              ?= iPhone 17
+
+.PHONY: all project build test run install uninstall clean ios ios-run
 
 all: build
 
@@ -53,6 +61,20 @@ install: build
 uninstall:
 	-killall OpenBattery 2>/dev/null || true
 	rm -rf $(INSTALL_DIR)/OpenBattery.app
+
+## Build the iOS app for the simulator (no signing needed)
+ios: $(PROJECT)
+	xcodebuild -project $(PROJECT) -scheme $(IOS_SCHEME) -configuration Debug \
+		-destination 'generic/platform=iOS Simulator' \
+		-derivedDataPath $(IOS_DERIVED_DATA) $(XCODEBUILD_FLAGS) build
+
+## Build, install and launch the iOS app on the simulator named by SIM
+ios-run: ios
+	xcrun simctl boot "$(SIM)" 2>/dev/null || true
+# Not every Xcode ships Simulator.app; the app still runs without the window.
+	-open -a Simulator 2>/dev/null || true
+	xcrun simctl install "$(SIM)" $(IOS_APP)
+	xcrun simctl launch --terminate-running-process "$(SIM)" $(IOS_BUNDLE_ID)
 
 clean:
 	rm -rf $(BUILD_DIR) $(PROJECT)

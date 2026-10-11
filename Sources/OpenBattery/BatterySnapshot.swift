@@ -2,7 +2,12 @@ import Foundation
 
 /// Everything OpenBattery knows about the battery at one point in time.
 /// Values are already converted to human units (W, V, A, °C, mAh, minutes).
-struct BatterySnapshot: Equatable {
+///
+/// Synced to iCloud as JSON (`BatteryRecord.payload`), read back by older and
+/// newer builds alike. Synthesized `Decodable` ignores defaults and fails on a
+/// missing key, so any field added from now on must be optional — a new
+/// `var x = false` would make every record written before it undecodable.
+struct BatterySnapshot: Equatable, Codable {
 
     // MARK: Live state
     var percentage: Int = 0
@@ -46,7 +51,7 @@ struct BatterySnapshot: Equatable {
 
     /// Raw gas-gauge lifetime log. See `BatteryDecoding.operatingTime` for the
     /// unit caveat on `operatingTimeRaw`.
-    struct Lifetime: Equatable {
+    struct Lifetime: Equatable, Codable {
         var averageTemperature: Double?
         var minimumTemperature: Double?
         var maximumTemperature: Double?

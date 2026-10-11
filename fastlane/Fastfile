@@ -72,6 +72,10 @@ platform :mac do
     # interactively. It is created once in Xcode and pushed into the match repo
     # with `bundle exec fastlane match import --type developer_id`; its profile
     # is ordinary and match manages it like any other.
+    #
+    # The Developer ID profile must grant the iCloud container: after enabling
+    # iCloud on the App ID, regenerate it once with
+    # match in force mode (see docs/icloud-setup.md).
     match(type: "developer_id", api_key: key, readonly: readonly)
   end
 
@@ -173,13 +177,21 @@ platform :mac do
     key = api_key
     match(type: "developer_id", api_key: key, readonly: true)
 
+    # iCloud and push are entitlements only a profile can grant: without one
+    # embedded, a Developer ID app claiming them is killed at launch. The
+    # archive takes it from project.yml; the export needs it named here.
+    profiles = lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING]
     app = build(
       configuration: "Release-Direct",
       export_method: "developer-id",
       codesigning_identity: "Developer ID Application",
+      export_options: { signingStyle: "manual", provisioningProfiles: profiles },
       version: options[:version],
       build_number: options[:build_number]
     )
+    unless File.exist?(File.join(File.expand_path(app, ROOT), "Contents/embedded.provisionprofile"))
+      UI.user_error!("the exported app has no embedded.provisionprofile")
+    end
 
     # Notarize the app first so the ticket is stapled into what people actually
     # run, then the disk image they download. Stapling both is what keeps a
@@ -190,6 +202,27 @@ platform :mac do
 
     UI.success("Notarized #{dmg}")
     dmg
+  end
+end
+
+# The iPhone and iPad companion. It signs automatically in Xcode and ships
+# through no lane yet; this only proves it builds.
+platform :ios do
+  before_all do
+    sh("xcodegen", "generate", "--spec", "#{ROOT}/project.yml", "--project", ROOT)
+  end
+
+  desc "Build OpenBatteryiOS for the simulator, unsigned"
+  lane :build do
+    xcodebuild(
+      project: PROJECT,
+      scheme: "OpenBatteryiOS",
+      configuration: "Debug",
+      destination: "generic/platform=iOS Simulator",
+      derivedDataPath: "#{BUILD_DIR}/DerivedData-iOS",
+      build: true,
+      xcargs: "CODE_SIGNING_ALLOWED=NO"
+    )
   end
 end
 
