@@ -1,8 +1,8 @@
 name: Release
 
 # Tags only. Publishing a GitHub Release creates a tag too, so this one workflow
-# covers both cases: every tag is archived with the App Store distribution
-# signature and uploaded to App Store Connect.
+# covers both cases: every tag builds the iOS app with the App Store
+# distribution signature and uploads it to App Store Connect.
 #
 # TestFlight always, never a direct App Store submission: the build sits there
 # until someone deliberately promotes it, so shipping stays a manual act.
@@ -104,18 +104,18 @@ jobs:
           xcodebuild -version
           xcodegen --version
 
-      # Apple Distribution plus the app-store provisioning profile, packaged as
-      # a .pkg signed with the Mac installer certificate — the only shape App
-      # Store Connect accepts.
+      # The iOS app, signed with Apple Distribution and its App Store profile
+      # from match. The Mac app does not go through the App Store: it ships as
+      # the notarized DMG from `fastlane release_github`.
       - name: Build and upload to TestFlight
         env:
           VERSION: ${{ steps.version.outputs.version }}
           BUILD: ${{ steps.version.outputs.build }}
-        run: bundle exec fastlane release_appstore version:"$VERSION" build_number:"$BUILD"
+        run: bundle exec fastlane ios release version:"$VERSION" build_number:"$BUILD"
 
-      - name: Keep the installer with the workflow run
+      - name: Keep the IPA with the workflow run
         uses: actions/upload-artifact@v7
         with:
-          name: OpenBattery-${{ steps.version.outputs.version }}-pkg
-          path: build/*.pkg
+          name: OpenBattery-iOS-${{ steps.version.outputs.version }}-ipa
+          path: build/*.ipa
           if-no-files-found: error

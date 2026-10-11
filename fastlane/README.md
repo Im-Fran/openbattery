@@ -76,6 +76,14 @@ Build, notarize and package the DMG that ships on GitHub
 
 Build OpenBatteryiOS for the simulator, unsigned
 
+### ios release
+
+```sh
+[bundle exec] fastlane ios release
+```
+
+Build the iOS app and upload it to TestFlight
+
 ----
 
 This README.md is auto-generated and will be re-generated every time [_fastlane_](https://fastlane.tools) is run.
