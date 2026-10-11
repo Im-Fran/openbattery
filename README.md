@@ -52,6 +52,9 @@ which macOS now handles itself (see [below](#-how-the-charge-limit-works)).
   companion app and nothing to set up beyond trusting this Mac from the device
   once, which is the same tap Finder asks for. Not available in the App Store
   build — see below.
+- **iPhone and iPad app** — the same readings on the phone, synced through
+  your own iCloud, so the Mac sees the phone and the phone sees the Mac from
+  anywhere. See [below](#-the-iphone-and-ipad-app).
 - **Charge limit guide** — one click to macOS's own Charge Limit setting.
 - **Launch at login** — via `SMAppService`, toggled from the popover.
 
@@ -105,14 +108,59 @@ empty.
 
 ---
 
+## 📱 The iPhone and iPad app
+
+`OpenBatteryiOS` is a small companion with two tabs:
+
+- **This iPhone / This iPad** — the device's own charge, charging state, Low
+  Power Mode and thermal state. It records a reading whenever the app comes
+  forward and on background refresh, whenever iOS grants one.
+- **Devices** — every Mac, iPhone and iPad on your iCloud account that runs
+  OpenBattery, with its latest reading and history.
+
+Sync goes through the private CloudKit database of your iCloud account
+(SwiftData mirroring), so the devices do not need to share a network, a cable
+or anything else beyond the same Apple ID. Nothing passes through a server of
+ours — there isn't one.
+
+iOS is stingy with battery data: the public APIs give an app the charge level,
+the charging state, Low Power Mode and the thermal state, and that is all.
+**Health, cycle count, capacity, volts and amps** are never exposed to an app.
+They appear on the phone only after a Mac running the direct build has read it
+over USB or Wi-Fi (see [Reading a connected device](#reading-a-connected-device)):
+the Mac publishes what it read to iCloud and the phone shows it, labelled with
+the Mac it came from.
+
+The Mac side syncs only in the notarized direct build; a Debug build has no
+iCloud entitlement and keeps its readings local. Setting up the iCloud
+container is a one-time job on the Apple Developer portal, described in
+[docs/icloud-setup.md](docs/icloud-setup.md).
+
+### Building it
+
+```bash
+make ios                    # build for the iOS Simulator
+make ios-run                # build, boot the simulator, install and launch
+make ios-run SIM="iPhone Air"   # any simulator name from `xcrun simctl list devices`
+```
+
+`make ios` takes `XCODEBUILD_FLAGS` like the other targets; CI builds it with
+`CODE_SIGNING_ALLOWED=NO`. For a real device, open the generated project in
+Xcode and run the `OpenBatteryiOS` scheme — it signs automatically with your
+team. iCloud sync needs a signed build and a device (or simulator) signed into
+iCloud.
+
+---
+
 ## 🛠 Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Language | Swift 5, deployment target macOS 14 |
+| Language | Swift 5, deployment target macOS 14 and iOS 18 |
 | UI | SwiftUI (`MenuBarExtra`, `Window`, `Settings`) |
 | Data | IOKit — `IORegistryEntryCreateCFProperty`, `IOPSNotificationCreateRunLoopSource` |
 | Devices | usbmuxd and lockdown over [SwiftNIO](https://github.com/apple/swift-nio) and [NIOSSL](https://github.com/apple/swift-nio-ssl) |
+| Sync | SwiftData mirrored to a private CloudKit database |
 | Login item | ServiceManagement (`SMAppService`) |
 | Project generation | [XcodeGen](https://github.com/yonaskolb/XcodeGen) from `project.yml` |
 | Tests | XCTest |
@@ -122,7 +170,9 @@ empty.
 ## 📋 Requirements
 
 - **macOS 14** or newer on **Apple Silicon** (Intel Macs are not supported)
-- **Xcode** with the macOS SDK
+- **Xcode** with the macOS SDK (and the iOS SDK and a simulator runtime for
+  the iPhone app)
+- **iOS 18** or newer for the iPhone and iPad app
 - **XcodeGen** — `brew install xcodegen`
 
 ---
@@ -171,6 +221,8 @@ make run        # build, then launch the menu bar app
 make install    # copy to /Applications and launch
 make test       # unit tests for the raw-value decoding
 make uninstall  # remove the app from /Applications
+make ios        # build the iPhone and iPad app for the simulator
+make ios-run    # ...and install and launch it on SIM (default "iPhone 17")
 make clean      # drop build/ and the generated Xcode project
 ```
 
@@ -194,6 +246,7 @@ bundle install                      # once, installs fastlane
 
 bundle exec fastlane build          # Release archive → build/OpenBattery.app
 bundle exec fastlane test           # unit tests, JUnit report in build/test_output
+bundle exec fastlane ios build      # iOS app for the simulator, unsigned
 ```
 
 Both lanes regenerate the Xcode project first, and both take `signed:false`
@@ -365,6 +418,9 @@ Sources/OpenBattery/
     DeviceSession.swift         one device's live connection
     DeviceMonitor.swift         the device list and the selected reading
   Views/                        menu bar label, popover, info window, device picker
+Sources/OpenBatteryiOS/         the iPhone and iPad app: this device, and all devices
+Sources/Sync/                   the iCloud store both apps read and write
+docs/icloud-setup.md            one-time iCloud setup on the Apple Developer portal
 Tests/                          decoding, framing, deadlines, menu bar configuration
 ```
 
