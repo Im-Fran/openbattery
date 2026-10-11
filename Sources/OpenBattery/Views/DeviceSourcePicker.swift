@@ -1,9 +1,14 @@
 import SwiftUI
 
-/// Chooses whose battery the window is showing: this Mac, or a device usbmuxd
-/// can see. It sits above the tabs rather than inside them, because it changes
-/// the subject of every tab at once.
+/// Chooses whose battery the window is showing: this Mac, a device usbmuxd
+/// can see, or one that synced its battery through iCloud. It sits above the
+/// tabs rather than inside them, because it changes the subject of every tab
+/// at once.
 struct DeviceSourcePicker: View {
+    /// Devices on iCloud, already without this Mac and without anything that is
+    /// plugged in right now — the live reading wins over a synced one.
+    let cloud: [SyncedDevice]
+
     @EnvironmentObject private var monitor: BatteryMonitor
     @EnvironmentObject private var devices: DeviceMonitor
 
@@ -12,9 +17,21 @@ struct DeviceSourcePicker: View {
             Picker("Battery", selection: $devices.source) {
                 Label("This Mac", systemImage: macSymbol)
                     .tag(DeviceMonitor.Source.mac)
-                ForEach(devices.devices) { device in
-                    Label(device.displayName, systemImage: Self.symbol(for: device))
-                        .tag(DeviceMonitor.Source.device(udid: device.udid))
+                // Sections become separators in the menu, so "plugged in now"
+                // and "last seen on iCloud" read as two different promises.
+                Section {
+                    ForEach(devices.devices) { device in
+                        Label(device.displayName, systemImage: Self.symbol(for: device))
+                            .tag(DeviceMonitor.Source.device(udid: device.udid))
+                    }
+                }
+                if !cloud.isEmpty {
+                    Section("On iCloud") {
+                        ForEach(cloud) { synced in
+                            Label(synced.device.name, systemImage: synced.device.symbol)
+                                .tag(DeviceMonitor.Source.cloud(id: synced.id))
+                        }
+                    }
                 }
             }
             // The label is the window's own subject; a visible "Battery:" in
@@ -25,7 +42,7 @@ struct DeviceSourcePicker: View {
             .frame(maxWidth: 240)
             .accessibilityLabel("Battery shown")
             // A pop-up offering one choice is not a choice.
-            .disabled(devices.devices.isEmpty)
+            .disabled(devices.devices.isEmpty && cloud.isEmpty)
 
             Spacer(minLength: 8)
             status
@@ -47,6 +64,14 @@ struct DeviceSourcePicker: View {
             // listed. Said once, quietly, rather than in an alert.
             Text(DeviceError.isSandboxed ? "Not available in the App Store version"
                                          : "Can't reach connected devices")
+        } else if let synced = selectedCloud {
+            // A synced reading can be hours old, and every tab below shows it
+            // as if it were now; this line is what keeps that honest.
+            Label("Last updated \(Fmt.relative(synced.date)) via iCloud",
+                  systemImage: "icloud")
+                .labelStyle(.titleAndIcon)
+                .help(cloudSubtitle(for: synced.device))
+                .accessibilityValue(cloudSubtitle(for: synced.device))
         } else if let device = selectedDevice {
             Label(device.isNetwork ? "Wi-Fi" : "USB",
                   systemImage: device.isNetwork ? "wifi" : "cable.connector")
@@ -66,6 +91,19 @@ struct DeviceSourcePicker: View {
     private var selectedDevice: DeviceIdentity? {
         guard case .device(let udid) = devices.source else { return nil }
         return devices.devices.first { $0.udid == udid }
+    }
+
+    private var selectedCloud: SyncedDevice? {
+        guard case .cloud(let id) = devices.source else { return nil }
+        return cloud.first { $0.id == id }
+    }
+
+    /// Who read it matters: a phone read over a cable by a Mac carries health
+    /// and cycles, one that recorded itself only knows its charge.
+    private func cloudSubtitle(for device: SyncDevice) -> String {
+        [device.model.isEmpty ? nil : device.model, device.relayedBy.map { "Read by \($0)" }]
+            .compactMap { $0 }
+            .joined(separator: " · ")
     }
 
     /// The model and version belong here rather than in the picker's own row,

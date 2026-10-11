@@ -23,6 +23,9 @@ struct OpenBatteryApp: App {
             BatteryInfoView()
                 .environmentObject(monitor)
                 .environmentObject(devices)
+                // The window lists what other devices synced; the menu bar
+                // only ever shows this Mac, so it needs no store.
+                .modelContainer(CloudStore.shared.container)
         }
         .windowResizability(.contentMinSize)
         .defaultPosition(.center)

@@ -100,8 +100,32 @@ final class BatteryMonitor: ObservableObject {
             if updated.record(capacity) { capacityLog = updated }
         }
         recordLoad(fresh.systemWatts)
+        publishToCloud(fresh)
         // Equatable guard: no SwiftUI invalidation when nothing actually moved.
         if fresh != snapshot { snapshot = fresh }
+    }
+
+    /// What this Mac last sent to iCloud, so the store's own spacing rule can
+    /// be asked *before* paying for a detailed read rather than after.
+    private var lastPublished: (date: Date, snapshot: BatterySnapshot)?
+
+    /// Sends this Mac's battery to iCloud for the other devices to show.
+    ///
+    /// Most readings here are quick ones — IOKit wakes us on every change and
+    /// nothing needs more while no window is open — but a quick read carries no
+    /// capacity, cycles or health, which is most of what an iPhone opens the
+    /// Mac's entry to see. So the store's rule decides first, and only a reading
+    /// it will actually keep (one per quarter hour, or a plug or a 5% jump)
+    /// pays for the detailed read. That is a few dozen IORegistry lookups a
+    /// handful of times an hour, against none at all on every other change.
+    private func publishToCloud(_ fresh: BatterySnapshot, now: Date = .now) {
+        // A Mac without a battery has nothing to say; checked first so a
+        // desktop never takes a detailed read at all.
+        guard fresh.isPresent,
+              CloudStore.shouldRecord(fresh, previous: lastPublished, now: now) else { return }
+        let detailed = fresh.cycleCount == nil ? BatteryReader.read(.detailed) : fresh
+        lastPublished = (now, detailed)
+        CloudStore.shared.publish(detailed, for: .current, at: now)
     }
 
     private func recordLoad(_ watts: Double?, at date: Date = .now) {

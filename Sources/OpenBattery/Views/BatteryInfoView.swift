@@ -1,4 +1,5 @@
 import Charts
+import SwiftData
 import SwiftUI
 
 /// Everything the gas gauge will tell us, a tab per group of readings.
@@ -66,21 +67,56 @@ struct BatteryInfoView: View {
     @EnvironmentObject private var monitor: BatteryMonitor
     @EnvironmentObject private var devices: DeviceMonitor
     @Environment(\.openURL) private var openURL
+    /// Every device's synced readings, oldest first. Mirrored from iCloud in
+    /// the background, so this updates as other devices publish.
+    @Query(sort: \BatteryRecord.date) private var records: [BatteryRecord]
+    /// Derived from `records` once per change rather than on every redraw: the
+    /// window redraws every five seconds, and the capacity history decodes.
+    @State private var synced: [SyncedDevice] = []
+    @State private var cloudCharge = SampleLog.charge
+    @State private var cloudCapacity = SampleLog.capacity
 
-    /// The battery this window is showing. Nil only for a device that has not
-    /// answered yet — the Mac's own reading is always there.
+    /// The battery this window is showing. Nil for a device that has not
+    /// answered yet, or a synced one with no reading left — the Mac's own
+    /// reading is always there.
     private var snapshot: BatterySnapshot? {
         switch devices.source {
         case .mac: return monitor.snapshot
         case .device: return devices.snapshot
+        case .cloud: return selectedCloud?.snapshot
         }
     }
 
-    private var isDevice: Bool { devices.source != .mac }
+    /// An iPhone or iPad rather than a Mac, which decides what the tiles say.
+    /// A Mac on iCloud is still a Mac: its Low Power Mode is its own.
+    private var isDevice: Bool {
+        switch devices.source {
+        case .mac: return false
+        case .device: return true
+        case .cloud: return selectedCloud.map { $0.device.kind != .mac } ?? true
+        }
+    }
+
+    /// Read over a cable, so its history is only as long as this window.
+    private var isSession: Bool {
+        if case .device = devices.source { return true }
+        return false
+    }
+
+    private var selectedCloud: SyncedDevice? {
+        guard case .cloud(let id) = devices.source else { return nil }
+        return synced.first { $0.id == id }
+    }
+
+    /// The picker's iCloud group. A device that is plugged in right now is left
+    /// out: it is already listed above with a live reading.
+    private var cloudChoices: [SyncedDevice] {
+        synced.filter { cloud in !devices.devices.contains { $0.udid == cloud.id } }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            DeviceSourcePicker()
+            DeviceSourcePicker(cloud: cloudChoices)
             content
         }
         // Tall enough for the longest tab, so the window keeps still while
@@ -101,13 +137,60 @@ struct BatteryInfoView: View {
         // of up to twelve seconds, then either readings or a failure. Someone
         // navigating by VoiceOver would otherwise hear nothing at all.
         .onChange(of: devices.source) { _, source in
+            // A synced reading can be hours old; the strip says so visually,
+            // and this says it to someone who never looks at the strip.
+            if case .cloud(let id) = source, let device = synced.first(where: { $0.id == id }) {
+                AccessibilityNotification.Announcement(
+                    "\(device.device.name), last updated \(Fmt.relative(device.date)) via iCloud").post()
+            }
             guard case .device = source, let name = devices.selectedName else { return }
             AccessibilityNotification.Announcement("Reading \(name)").post()
+        }
+        .onChange(of: records, initial: true) { rebuildCloud() }
+        .onChange(of: devices.source) { rebuildCloud() }
+        // Plugging in the device being shown from iCloud swaps in the live
+        // reading of the very same device, rather than leaving the picker
+        // pointing at an entry that just left its list.
+        .onChange(of: devices.devices) { _, connected in
+            guard case .cloud(let id) = devices.source,
+                  connected.contains(where: { $0.udid == id }) else { return }
+            devices.source = .device(udid: id)
         }
         .onChange(of: devices.failure) { _, failure in
             guard let failure, let message = failure.errorDescription else { return }
             AccessibilityNotification.Announcement(message).post()
         }
+    }
+
+    private func rebuildCloud() {
+        let thisMac = SyncDevice.current.id
+        synced = SyncedDevice.merged(SyncedDevice.latest(from: records)).filter { $0.id != thisMac }
+        guard case .cloud(let id) = devices.source else { return }
+        // Pruned, deleted elsewhere, or folded into its phone's own entry: a
+        // selection matching no menu item leaves a blank, possibly disabled
+        // pop-up and no way back, so the window returns to this Mac instead.
+        guard synced.contains(where: { $0.id == id }) else {
+            devices.source = .mac
+            return
+        }
+        // Fed through the same logs the Mac keeps, so the charts bucket and
+        // space a synced history exactly like a local one. `to: nil` keeps them
+        // out of defaults: iCloud is already where this history lives.
+        var charge = SampleLog.charge
+        var capacity = SampleLog.capacity
+        for record in records where record.deviceID == id {
+            charge.record(record.percentage, at: record.date, to: nil)
+            // Checked before decoding: the log keeps one capacity a day, and
+            // a month of quarter-hourly payloads is not worth decoding to
+            // throw nearly all of them away.
+            if let last = capacity.samples.last,
+               record.date.timeIntervalSince(last.date) < capacity.minimumSpacing { continue }
+            if let mAh = record.snapshot?.fullChargeCapacityMAh {
+                capacity.record(mAh, at: record.date, to: nil)
+            }
+        }
+        cloudCharge = charge
+        cloudCapacity = capacity
     }
 
     /// Nothing is lost by pausing: IOKit still wakes the monitor on every
@@ -144,6 +227,16 @@ struct BatteryInfoView: View {
             // Without a battery every tab would be a wall of em dashes, which
             // reads as a broken window rather than as a Mac that has no battery.
             if snapshot.isPresent { tabs(snapshot) } else { noBattery }
+        } else if case .cloud = devices.source {
+            // Pruned after a month, or removed on another device: there is no
+            // round trip to wait for, so a spinner here would never resolve.
+            ContentUnavailableView {
+                Label("No Synced Reading", systemImage: "icloud.slash")
+            } description: {
+                Text("Open OpenBattery on that device to sync a new reading.")
+            } actions: {
+                Button("Show This Mac") { devices.source = .mac }
+            }
         } else if let failure = devices.failure {
             // The title names which device, so the message can stay about what
             // happened and what to do next.
@@ -178,17 +271,14 @@ struct BatteryInfoView: View {
     /// menu bar to find out what the window can do.
     private func tabs(_ snapshot: BatterySnapshot) -> some View {
         TabView(selection: shownTab(snapshot)) {
-            ChargeTab(snapshot: snapshot,
-                      log: isDevice ? devices.chargeLog : monitor.chargeLog,
-                      isDevice: isDevice)
+            ChargeTab(snapshot: snapshot, log: chargeLog, isDevice: isDevice,
+                      isSession: isSession)
                 .tabItem { Label(Tab.charge.title, systemImage: Tab.charge.symbol) }
                 .tag(Tab.charge)
-            PowerTab(snapshot: snapshot, load: isDevice ? devices.load : monitor.load)
+            PowerTab(snapshot: snapshot, load: load)
                 .tabItem { Label(Tab.power.title, systemImage: Tab.power.symbol) }
                 .tag(Tab.power)
-            HealthTab(snapshot: snapshot,
-                      log: isDevice ? devices.capacityLog : monitor.capacityLog,
-                      isDevice: isDevice)
+            HealthTab(snapshot: snapshot, log: capacityLog, isDevice: isDevice)
                 .tabItem { Label(Tab.health.title, systemImage: Tab.health.symbol) }
                 .tag(Tab.health)
             if let lifetime = snapshot.lifetime {
@@ -199,6 +289,31 @@ struct BatteryInfoView: View {
         }
     }
 
+    private var chargeLog: SampleLog {
+        switch devices.source {
+        case .mac: return monitor.chargeLog
+        case .device: return devices.chargeLog
+        case .cloud: return cloudCharge
+        }
+    }
+
+    private var capacityLog: SampleLog {
+        switch devices.source {
+        case .mac: return monitor.capacityLog
+        case .device: return devices.capacityLog
+        case .cloud: return cloudCapacity
+        }
+    }
+
+    /// A minute of live load means nothing a quarter of an hour later, so a
+    /// synced device has none.
+    private var load: [BatteryMonitor.LoadSample] {
+        switch devices.source {
+        case .mac: return monitor.load
+        case .device: return devices.load
+        case .cloud: return []
+        }
+    }
 
     private var noBattery: some View {
         ContentUnavailableView("No Battery", systemImage: "battery.slash",
@@ -217,6 +332,9 @@ private struct ChargeTab: View {
     /// where the Mac reports Low Power Mode, and its history only covers the
     /// minutes this window has been open.
     let isDevice: Bool
+    /// Read over a cable while this window is open, so its history is only this
+    /// session's. A device on iCloud has the last 12 hours like the Mac does.
+    let isSession: Bool
 
     var body: some View {
         HeroTab {
@@ -265,13 +383,18 @@ private struct ChargeTab: View {
                          """)
             }
         } detail: {
-            DetailSection(isDevice ? "This session" : "Last 12 hours",
+            DetailSection(isSession ? "This session" : "Last 12 hours",
                           caption: "charge level",
-                          info: isDevice ? """
+                          info: isSession ? """
                           The charge read since this window was opened, one bar \
                           per hour. A device is only read while the window is \
                           open — there is no cable to read down while it is \
                           closed — so nothing is kept after you close it.
+                          """ : isDevice ? """
+                          The charge this device synced through iCloud, one bar \
+                          per hour. Hours are empty where it recorded nothing — \
+                          OpenBattery was not running on it, or nothing had \
+                          changed enough to be worth recording.
                           """ : """
                           The charge OpenBattery wrote down while it was \
                           running, one bar per hour. Hours are empty where \
@@ -284,7 +407,7 @@ private struct ChargeTab: View {
                             domain: 0...100,
                             label: { "\($0)%" },
                             axis: .hour,
-                            empty: isDevice
+                            empty: isSession
                                 ? "The chart fills in while this window stays open."
                                 : "No readings yet. The chart fills in while OpenBattery is running.")
             }

@@ -15,6 +15,9 @@ final class DeviceMonitor: ObservableObject {
     enum Source: Equatable, Hashable {
         case mac
         case device(udid: String)
+        /// The newest reading another device synced to iCloud: an iPhone that
+        /// recorded itself, another Mac, or a device another Mac read by cable.
+        case cloud(id: String)
     }
 
     @Published var source: Source = .mac {
@@ -234,6 +237,12 @@ final class DeviceMonitor: ObservableObject {
                 devices[index] = reading.identity
             }
             record(reading.snapshot)
+            // Relayed under the UDID, so it lines up with the same device's
+            // entry the next time it is plugged in. The store spaces these out
+            // itself, so a five-second cadence costs nothing extra.
+            CloudStore.shared.publish(reading.snapshot, for: SyncDevice(
+                id: udid, name: reading.identity.displayName,
+                model: reading.identity.model ?? "", relayedBy: SyncDevice.current.name))
         } catch let error as DeviceError {
             failure = error
             snapshot = nil
