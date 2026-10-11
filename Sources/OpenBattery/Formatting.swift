@@ -10,6 +10,12 @@ extension BatterySnapshot {
         if percentage <= 20 && !isPluggedIn { return .red }
         return .secondary
     }
+
+    /// `chargeTint` for a large bar: `.secondary` on an ordinary discharge
+    /// reads as disabled at that size, and the system battery icon is plain.
+    var heroTint: Color {
+        chargeTint == .secondary ? .primary : chargeTint
+    }
 }
 
 extension ShapeStyle where Self == Color {
