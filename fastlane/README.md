@@ -61,7 +61,7 @@ Build and upload a TestFlight build to App Store Connect
 [bundle exec] fastlane mac release_github
 ```
 
-Build, notarize and package the DMG that ships on GitHub
+Build, notarize and package the DMG and zip that ship on GitHub
 
 ----
 
