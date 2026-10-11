@@ -55,6 +55,9 @@ targets:
     platform: macOS
     sources:
       - Sources/OpenBattery
+      # Shared with the iOS app: both write their readings to the same iCloud
+      # container and read each other's back.
+      - Sources/Sync
     dependencies:
       # Talking to a device means a plaintext plist handshake that then upgrades
       # to mutual TLS on the same connection. Network.framework cannot upgrade a
@@ -88,6 +91,7 @@ targets:
     platform: macOS
     sources:
       - Tests
+      - Sources/Sync
       - path: Sources/OpenBattery/BatteryDecoding.swift
       - path: Sources/OpenBattery/BatterySnapshot.swift
       - path: Sources/OpenBattery/Devices/DeviceBattery.swift

@@ -95,6 +95,12 @@ enum Fmt {
         return value.formatted(.dateTime.day().month(.abbreviated).year().locale(dateLocale))
     }
 
+    /// "5 minutes ago", in the interface's English. Clamped to now: the date
+    /// comes from another device's clock, which may run a little ahead.
+    static func relative(_ date: Date, now: Date = .now) -> String {
+        min(date, now).formatted(.relative(presentation: .named).locale(dateLocale))
+    }
+
     static func minutes(_ value: Int?) -> String {
         guard let value else { return unavailable }
         return BatteryDecoding.formatDuration(minutes: value)
