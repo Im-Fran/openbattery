@@ -80,12 +80,16 @@ targets:
         COMBINE_HIDPI_IMAGES: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       configs:
-        Debug:
-          CODE_SIGN_ENTITLEMENTS: Sources/OpenBattery/Resources/OpenBattery-Direct.entitlements
+        # No entitlements in Debug: iCloud needs a provisioning profile, and a
+        # Mac app claiming iCloud without one is killed at launch. Without the
+        # entitlement the sync store simply stays local.
         Release:
           CODE_SIGN_ENTITLEMENTS: Sources/OpenBattery/Resources/OpenBattery.entitlements
         Release-Direct:
           CODE_SIGN_ENTITLEMENTS: Sources/OpenBattery/Resources/OpenBattery-Direct.entitlements
+          # On the app target only: passed on the command line it would reach
+          # the Swift packages too, which refuse any profile. Match creates it.
+          PROVISIONING_PROFILE_SPECIFIER: "match Direct cl.franciscosolis.openbattery macos"
 
   OpenBatteryTests:
     type: bundle.unit-test

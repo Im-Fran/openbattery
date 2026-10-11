@@ -2,14 +2,27 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- The build that ships as a notarized DMG, and the one used while
-	     developing. Deliberately empty: it is not sandboxed, and outside the
-	     sandbox none of these keys grant anything.
+	<!-- The build that ships as a notarized DMG. Not sandboxed: reading the
+	     battery of a connected iPhone means talking to /var/run/usbmuxd, and
+	     the sandbox denies connecting to a unix socket outside the container.
+	     Hardened runtime stays on.
 
-	     Why it exists at all: reading the battery of a connected iPhone means
-	     talking to /var/run/usbmuxd, and the sandbox denies connecting to a
-	     unix socket outside the container. The App Store build keeps the
-	     sandbox and has no device support — see OpenBattery.entitlements.
-	     Hardened runtime stays on for both. -->
+	     iCloud is how the Mac sees an iPhone that is nowhere near it: both
+	     apps write to the same private CloudKit container. A Developer ID
+	     build may use CloudKit, but only against the Production environment,
+	     and only with a provisioning profile that grants the container. -->
+	<key>com.apple.developer.icloud-container-identifiers</key>
+	<array>
+		<string>iCloud.cl.franciscosolis.openbattery</string>
+	</array>
+	<key>com.apple.developer.icloud-services</key>
+	<array>
+		<string>CloudKit</string>
+	</array>
+	<key>com.apple.developer.icloud-container-environment</key>
+	<string>Production</string>
+	<!-- Pushes are how CloudKit says another device wrote something. -->
+	<key>com.apple.developer.aps-environment</key>
+	<string>production</string>
 </dict>
 </plist>
