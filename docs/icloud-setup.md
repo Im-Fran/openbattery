@@ -61,8 +61,12 @@ The sandboxed `Release` / App Store profile is invalidated too. Its
 entitlements do not ask for iCloud, so it only needs regenerating if that build
 is used again (`match appstore --force`).
 
-**iOS**: nothing to do with Automatic signing — Xcode makes a new development
-profile on the next build. There is no iOS distribution lane yet.
+**iOS**: while developing, Automatic signing makes the development profile on
+the next Xcode build. For TestFlight and the App Store, `fastlane ios release`
+signs with match's `match AppStore cl.franciscosolis.openbattery` profile
+(created with `match appstore --platform ios`). Its entitlements file takes
+`aps-environment` from the `APS_ENVIRONMENT` build setting — `development` in
+Debug, `production` in Release — because each must match its profile.
 
 **Mac Debug** builds carry no entitlements on purpose: a Mac app that claims
 iCloud without a matching profile is killed at launch. Debug keeps its store

@@ -22,34 +22,35 @@ end
 
 default_platform(:mac)
 
+# One App Store Connect key drives match, notarization and uploads alike, for
+# both platforms — hence outside them. Locally it is the .p8 on disk; CI passes
+# the same key as a secret.
+private_lane :api_key do
+  key_id = ENV.fetch("ASC_KEY_ID")
+  key_content = ENV["ASC_KEY_CONTENT"]
+
+  if key_content.to_s.empty?
+    app_store_connect_api_key(
+      key_id: key_id,
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      key_filepath: File.expand_path("~/.appstoreconnect/private_keys/AuthKey_#{key_id}.p8")
+    )
+  else
+    app_store_connect_api_key(
+      key_id: key_id,
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      key_content: key_content,
+      is_key_content_base64: true
+    )
+  end
+end
+
 platform :mac do
   before_all do
     # A throwaway keychain on CI: match has nowhere to put certificates
     # otherwise, and the runner's login keychain is locked.
     setup_ci if is_ci
     sh("xcodegen", "generate", "--spec", "#{ROOT}/project.yml", "--project", ROOT)
-  end
-
-  # One App Store Connect key drives match, notarization and uploads alike.
-  # Locally it is the .p8 on disk; CI passes the same key as a secret.
-  private_lane :api_key do
-    key_id = ENV.fetch("ASC_KEY_ID")
-    key_content = ENV["ASC_KEY_CONTENT"]
-
-    if key_content.to_s.empty?
-      app_store_connect_api_key(
-        key_id: key_id,
-        issuer_id: ENV.fetch("ASC_ISSUER_ID"),
-        key_filepath: File.expand_path("~/.appstoreconnect/private_keys/AuthKey_#{key_id}.p8")
-      )
-    else
-      app_store_connect_api_key(
-        key_id: key_id,
-        issuer_id: ENV.fetch("ASC_ISSUER_ID"),
-        key_content: key_content,
-        is_key_content_base64: true
-      )
-    end
   end
 
   desc "Sync signing certificates and profiles from the match repo"
@@ -77,6 +78,10 @@ platform :mac do
     # iCloud on the App ID, regenerate it once with
     # match in force mode (see docs/icloud-setup.md).
     match(type: "developer_id", api_key: key, readonly: readonly)
+
+    # The iOS app shares the App ID; the Matchfile says macOS, so the platform
+    # is named here. Its Apple Distribution certificate is the one above.
+    match(type: "appstore", platform: "ios", api_key: key, readonly: readonly)
   end
 
   desc "Run the unit tests"
@@ -205,10 +210,11 @@ platform :mac do
   end
 end
 
-# The iPhone and iPad companion. It signs automatically in Xcode and ships
-# through no lane yet; this only proves it builds.
+# The iPhone and iPad companion. Xcode signs it automatically while developing;
+# the release lane signs it from match like the Mac app.
 platform :ios do
   before_all do
+    setup_ci if is_ci
     sh("xcodegen", "generate", "--spec", "#{ROOT}/project.yml", "--project", ROOT)
   end
 
@@ -223,6 +229,46 @@ platform :ios do
       build: true,
       xcargs: "CODE_SIGNING_ALLOWED=NO"
     )
+  end
+
+  # The lane CI runs for every tag. TestFlight only: a build waits there until
+  # someone promotes it to the App Store, so no tag ships a version on its own.
+  desc "Build the iOS app and upload it to TestFlight"
+  lane :release do |options|
+    key = api_key
+    match(type: "appstore", platform: "ios", api_key: key, readonly: true)
+    profiles = lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING]
+
+    # Manual signing from the command line is safe here, unlike on the Mac: the
+    # iOS target pulls in no Swift packages for the profile to trip over.
+    xcargs = [
+      "DEVELOPMENT_TEAM=#{TEAM_ID}",
+      "CODE_SIGN_STYLE=Manual",
+      "CODE_SIGN_IDENTITY='Apple Distribution'",
+      "PROVISIONING_PROFILE_SPECIFIER='#{profiles.values.first}'"
+    ]
+    xcargs << "MARKETING_VERSION=#{options[:version]}" if options[:version]
+    xcargs << "CURRENT_PROJECT_VERSION=#{options[:build_number]}" if options[:build_number]
+
+    ipa = build_ios_app(
+      project: PROJECT,
+      scheme: "OpenBatteryiOS",
+      configuration: "Release",
+      export_method: "app-store",
+      export_options: { signingStyle: "manual", provisioningProfiles: profiles },
+      derived_data_path: "#{BUILD_DIR}/DerivedData-iOS",
+      archive_path: "#{BUILD_DIR}/OpenBattery-iOS.xcarchive",
+      output_directory: BUILD_DIR,
+      output_name: "OpenBattery-iOS.ipa",
+      xcargs: xcargs.join(" ")
+    )
+
+    if options[:upload] == false
+      UI.success("Built #{ipa} — upload skipped")
+    else
+      upload_to_testflight(ipa: ipa, api_key: key, skip_waiting_for_build_processing: true)
+    end
+    ipa
   end
 end
 

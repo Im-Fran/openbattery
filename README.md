@@ -90,8 +90,8 @@ path starts with. So there are two builds of the same code:
 
 | Build | Where | Devices |
 |---|---|---|
-| App Store / TestFlight | sandboxed | no |
 | [GitHub releases](https://github.com/Im-Fran/openbattery/releases) | notarized DMG | yes |
+| `Release` config (unused) | sandboxed | no |
 
 Nothing else differs, and no pairing of its own happens: macOS already holds the
 pair record for every device trusted in Finder, and usbmuxd hands it over. A
@@ -260,10 +260,13 @@ bundle exec fastlane build signed:false
 
 Releases run on GitHub Actions and are driven entirely by tags, because
 publishing a Release creates a tag too. Every tag does the same thing: archive
-with the App Store distribution signature — Apple Distribution plus the
-app-store provisioning profile, packaged as a signed `.pkg` — and upload the
-result to App Store Connect as a TestFlight build, which is also kept with the
-workflow run.
+the **iOS app** with the App Store distribution signature — Apple Distribution
+plus its App Store profile from match — and upload the `.ipa` to App Store
+Connect as a TestFlight build, which is also kept with the workflow run
+(`bundle exec fastlane ios release`; `upload:false` builds without uploading).
+
+The Mac app does not go through the App Store at all: it ships only as the
+notarized DMG below.
 
 It stops there on purpose. A TestFlight build reaches testers only once someone
 promotes it, and reaches the App Store only through a submission made by hand,
