@@ -39,3 +39,8 @@ jobs:
 
       - name: Build (Release, App Store)
         run: make build CONFIG=Release XCODEBUILD_FLAGS='CODE_SIGNING_ALLOWED=NO'
+
+      # The iPhone and iPad companion, for the simulator: no device, no profile,
+      # but every shared file in Sources/Sync has to compile for iOS too.
+      - name: Build (iOS Simulator)
+        run: make ios XCODEBUILD_FLAGS='CODE_SIGNING_ALLOWED=NO'

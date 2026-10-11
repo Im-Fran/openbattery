@@ -205,6 +205,27 @@ platform :mac do
   end
 end
 
+# The iPhone and iPad companion. It signs automatically in Xcode and ships
+# through no lane yet; this only proves it builds.
+platform :ios do
+  before_all do
+    sh("xcodegen", "generate", "--spec", "#{ROOT}/project.yml", "--project", ROOT)
+  end
+
+  desc "Build OpenBatteryiOS for the simulator, unsigned"
+  lane :build do
+    xcodebuild(
+      project: PROJECT,
+      scheme: "OpenBatteryiOS",
+      configuration: "Debug",
+      destination: "generic/platform=iOS Simulator",
+      derivedDataPath: "#{BUILD_DIR}/DerivedData-iOS",
+      build: true,
+      xcargs: "CODE_SIGNING_ALLOWED=NO"
+    )
+  end
+end
+
 # dmgbuild writes the image's .DS_Store directly. The Finder route — AppleScript
 # setting `background picture` — is accepted and silently dropped on current
 # macOS, so nothing but the icon positions ever reached the image.
