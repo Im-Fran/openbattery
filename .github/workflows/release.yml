@@ -1,15 +1,15 @@
 name: Release
 
 # Tags only. Publishing a GitHub Release creates a tag too, so this one workflow
-# covers both cases: every tag builds the iOS app with the App Store
-# distribution signature and uploads it to App Store Connect.
+# covers both cases. Every tag ships both apps, in parallel:
 #
-# TestFlight always, never a direct App Store submission: the build sits there
-# until someone deliberately promotes it, so shipping stays a manual act.
-#
-# The Developer ID route — the notarized DMG — is not run here: that certificate
-# cannot be created through the App Store Connect API, so it is a local lane
-# (`fastlane release_github`) rather than part of the pipeline.
+# - iOS: built with the App Store distribution signature and uploaded to
+#   TestFlight. Never a direct App Store submission: the build sits there until
+#   someone deliberately promotes it, so shipping stays a manual act.
+# - macOS: built with Developer ID, notarized, and attached to the tag's GitHub
+#   Release as a DMG and a zip. The Mac app does not go through the App Store.
+#   The Developer ID certificate cannot be *created* through the App Store
+#   Connect API, but once imported into match it is read like any other.
 #
 # Tag format: <version>[+<build>], with an optional leading "v".
 #   1.4.0+7  → version 1.4.0, build 7
@@ -27,19 +27,25 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-jobs:
-  release:
-    name: TestFlight
-    runs-on: macos-latest
-    timeout-minutes: 60
-    env:
-      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-      ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
-      MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
-      MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
-      MATCH_REPOSITORY_URL: ${{ secrets.MATCH_REPOSITORY_URL }}
+permissions:
+  contents: read
 
+env:
+  ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+  ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+  ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
+  MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+  MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+  MATCH_REPOSITORY_URL: ${{ secrets.MATCH_REPOSITORY_URL }}
+
+jobs:
+  prepare:
+    name: Prepare
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+      build: ${{ steps.version.outputs.build }}
     steps:
       # Fail in seconds, naming the secret, instead of minutes later inside match.
       - name: Check secrets
@@ -58,8 +64,6 @@ jobs:
           check MATCH_GIT_BASIC_AUTHORIZATION "base64 of user:token, token with read access to the match repo"
           check MATCH_REPOSITORY_URL "HTTPS URL of the match certificates repo"
           exit "$missing"
-
-      - uses: actions/checkout@v7
 
       # The tag reaches the shell through the environment, never interpolated
       # into the script: a ref name is attacker-shaped input.
@@ -88,6 +92,16 @@ jobs:
           echo "build=$BUILD" >> "$GITHUB_OUTPUT"
           echo "Building $VERSION ($BUILD) from $TAG"
 
+  testflight:
+    name: TestFlight
+    needs: prepare
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+
       # Ruby 4: Gemfile.lock is in bundler 4's format, which bundler 2.x — what
       # a 3.x runner ships — cannot read.
       - uses: ruby/setup-ruby@v1
@@ -105,17 +119,68 @@ jobs:
           xcodegen --version
 
       # The iOS app, signed with Apple Distribution and its App Store profile
-      # from match. The Mac app does not go through the App Store: it ships as
-      # the notarized DMG from `fastlane release_github`.
+      # from match.
       - name: Build and upload to TestFlight
         env:
-          VERSION: ${{ steps.version.outputs.version }}
-          BUILD: ${{ steps.version.outputs.build }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          BUILD: ${{ needs.prepare.outputs.build }}
         run: bundle exec fastlane ios release version:"$VERSION" build_number:"$BUILD"
 
       - name: Keep the IPA with the workflow run
         uses: actions/upload-artifact@v7
         with:
-          name: OpenBattery-iOS-${{ steps.version.outputs.version }}-ipa
+          name: OpenBattery-iOS-${{ needs.prepare.outputs.version }}-ipa
           path: build/*.ipa
           if-no-files-found: error
+
+  github:
+    name: GitHub Release
+    needs: prepare
+    runs-on: macos-latest
+    timeout-minutes: 60
+    # The only job that writes: it creates the Release and attaches the files.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+          bundler-cache: true
+
+      # uv runs the pinned dmgbuild that lays out the disk image.
+      - name: Install build tools
+        run: brew install xcodegen uv
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcodegen --version
+
+      # Developer ID signature, notarized and stapled: the app, then the DMG,
+      # then a zip of the stapled app.
+      - name: Build, notarize and package
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          BUILD: ${{ needs.prepare.outputs.build }}
+        run: bundle exec fastlane mac release_github version:"$VERSION" build_number:"$BUILD"
+
+      # Re-running a tag replaces its files rather than failing on the Release
+      # the first run created.
+      - name: Publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          files=(build/OpenBattery-"$VERSION".dmg build/OpenBattery-"$VERSION".zip)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${files[@]}" --clobber
+          else
+            gh release create "$TAG" "${files[@]}" --verify-tag \
+              --title "OpenBattery $VERSION" --generate-notes
+          fi

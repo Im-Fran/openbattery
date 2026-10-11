@@ -177,7 +177,7 @@ platform :mac do
     pkg
   end
 
-  desc "Build, notarize and package the DMG that ships on GitHub"
+  desc "Build, notarize and package the DMG and zip that ship on GitHub"
   lane :release_github do |options|
     key = api_key
     match(type: "developer_id", api_key: key, readonly: true)
@@ -204,9 +204,12 @@ platform :mac do
     notarize(package: app, api_key: key, print_log: true)
     dmg = package_dmg(app)
     notarize(package: dmg, api_key: key, print_log: true)
+    # Zipped after stapling, so the ticket travels inside the archive; a zip
+    # cannot carry one of its own.
+    zip = package_zip(app)
 
-    UI.success("Notarized #{dmg}")
-    dmg
+    UI.success("Notarized #{dmg} and #{zip}")
+    [dmg, zip]
   end
 end
 
@@ -296,12 +299,25 @@ def build_xcargs(options)
   args.join(" ") unless args.empty?
 end
 
-def package_dmg(app)
-  app_abs = File.expand_path(app, ROOT)
+def app_version(app_abs)
   version = `plutil -extract CFBundleShortVersionString raw -o - "#{app_abs}/Contents/Info.plist"`.strip
   UI.user_error!("no CFBundleShortVersionString in #{app_abs}") if version.empty?
+  version
+end
 
-  dmg = File.join(ROOT, BUILD_DIR, "OpenBattery-#{version}.dmg")
+# ditto rather than zip: it keeps the extended attributes and symlinks a signed
+# bundle depends on, and --keepParent puts OpenBattery.app at the archive root.
+def package_zip(app)
+  app_abs = File.expand_path(app, ROOT)
+  zip = File.join(ROOT, BUILD_DIR, "OpenBattery-#{app_version(app_abs)}.zip")
+  FileUtils.rm_f(zip)
+  sh("ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", app_abs, zip)
+  zip
+end
+
+def package_dmg(app)
+  app_abs = File.expand_path(app, ROOT)
+  dmg = File.join(ROOT, BUILD_DIR, "OpenBattery-#{app_version(app_abs)}.dmg")
   FileUtils.rm_f(dmg)
 
   # uvx runs dmgbuild without installing anything permanently; the version is

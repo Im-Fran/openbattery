@@ -265,8 +265,10 @@ plus its App Store profile from match — and upload the `.ipa` to App Store
 Connect as a TestFlight build, which is also kept with the workflow run
 (`bundle exec fastlane ios release`; `upload:false` builds without uploading).
 
-The Mac app does not go through the App Store at all: it ships only as the
-notarized DMG below.
+The same tag also builds the **Mac app** with Developer ID, notarizes it, and
+attaches `OpenBattery-<version>.dmg` and `OpenBattery-<version>.zip` to the
+tag's GitHub Release, creating the Release if there is none. The Mac app does
+not go through the App Store at all.
 
 It stops there on purpose. A TestFlight build reaches testers only once someone
 promotes it, and reaches the App Store only through a submission made by hand,
@@ -276,11 +278,10 @@ The tag carries both version numbers: `<version>+<build>`, with an optional
 leading `v`, and a missing `+<build>` means build 1. Nothing in `project.yml`
 needs bumping — the tag is passed to the build.
 
-The notarized DMG is not part of the pipeline: its Developer ID certificate
-cannot be issued through the App Store Connect API, so that build is a local
-lane (see below) and the image is attached to the GitHub Release by hand.
+The Developer ID certificate cannot be issued through the App Store Connect
+API, but once imported into match (see below) CI reads it like any other.
 
-The workflow needs five repository secrets:
+The workflow needs these repository secrets:
 
 | Secret | What it is |
 |---|---|
@@ -288,14 +289,15 @@ The workflow needs five repository secrets:
 | `ASC_KEY_CONTENT` | the `AuthKey_<KEY_ID>.p8`, base64 encoded |
 | `MATCH_PASSWORD` | the match repo passphrase (in the login keychain locally) |
 | `MATCH_GIT_BASIC_AUTHORIZATION` | base64 of `user:token` for a token that can read `Im-Fran/certificates` |
+| `MATCH_REPOSITORY_URL` | HTTPS URL of the match certificates repo |
 
 ### Releasing the GitHub build
 
-Run from a machine that holds the Developer ID certificate — this one is not
-part of the workflow:
+Every tag does this in CI. To build the same files locally, from a machine that
+can read the match repo:
 
 ```bash
-bundle exec fastlane release_github   # signed, notarized OpenBattery-<version>.dmg
+bundle exec fastlane release_github   # signed, notarized OpenBattery-<version>.dmg and .zip
 bundle exec fastlane dmg              # repackage the built app, no notarization
 ```
 
