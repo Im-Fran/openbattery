@@ -38,8 +38,27 @@ jobs:
       ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
       MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
       MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+      MATCH_REPOSITORY_URL: ${{ secrets.MATCH_REPOSITORY_URL }}
 
     steps:
+      # Fail in seconds, naming the secret, instead of minutes later inside match.
+      - name: Check secrets
+        run: |
+          missing=0
+          check() {
+            if [ -z "$(printenv "$1")" ]; then
+              echo "::error::Missing secret $1 — $2"
+              missing=1
+            fi
+          }
+          check ASC_KEY_ID "App Store Connect API key ID (App Manager role)"
+          check ASC_ISSUER_ID "App Store Connect API issuer ID"
+          check ASC_KEY_CONTENT "the .p8 API key, base64-encoded"
+          check MATCH_PASSWORD "passphrase of the match certificates repo"
+          check MATCH_GIT_BASIC_AUTHORIZATION "base64 of user:token, token with read access to the match repo"
+          check MATCH_REPOSITORY_URL "HTTPS URL of the match certificates repo"
+          exit "$missing"
+
       - uses: actions/checkout@v7
 
       # The tag reaches the shell through the environment, never interpolated
