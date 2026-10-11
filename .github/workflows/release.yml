@@ -98,9 +98,11 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
+      # Fully qualified: a bare name would also match a branch called the
+      # same, and a dispatched run must build the tag it names, nothing else.
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare.outputs.tag }}
+          ref: refs/tags/${{ needs.prepare.outputs.tag }}
 
       # Ruby 4: Gemfile.lock is in bundler 4's format, which bundler 2.x — what
       # a 3.x runner ships — cannot read.
@@ -142,9 +144,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Fully qualified: a bare name would also match a branch called the
+      # same, and a dispatched run must build the tag it names, nothing else.
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare.outputs.tag }}
+          ref: refs/tags/${{ needs.prepare.outputs.tag }}
 
       - uses: ruby/setup-ruby@v1
         with:
