@@ -1,8 +1,5 @@
 blank_issues_enabled: false
 contact_links:
-  - name: 💬 Questions and ideas
-    url: https://github.com/Im-Fran/openbattery/discussions
-    about: Ask how something works, or float an idea before opening an issue.
   - name: 🔒 Report a security vulnerability
     url: https://github.com/Im-Fran/openbattery/security/advisories/new
     about: Please report vulnerabilities privately, never as a public issue.
