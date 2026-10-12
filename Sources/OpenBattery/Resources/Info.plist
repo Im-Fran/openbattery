@@ -26,6 +26,11 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>LSUIElement</key>
 	<true/>
+	<!-- Verifies the Ed25519 signature of every update zip. Not a secret; in
+	     the plist so release.yml can check the shipped key against the one
+	     that signed the release. -->
+	<key>OpenUpdaterPublicKey</key>
+	<string>E40JS/5WLiosiodbayAhE+OZt4FcstDET0RzyQi40ng=</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 FranciscoSolis E.I.R.L. (RUT 78.473.345-9). MIT License.</string>
 </dict>

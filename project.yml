@@ -49,6 +49,11 @@ packages:
   swift-nio-ssl:
     url: https://github.com/apple/swift-nio-ssl.git
     minorVersion: 2.37.5
+  # No tags yet, so a commit. release.yml builds openupdater-cli from the same
+  # one, so the signer and the verifier never drift apart.
+  openupdater:
+    url: https://github.com/Im-Fran/openupdater.git
+    revision: 2a9b09de2cc6dc0d5987a9f1c8595dc0dd79bbe4
 
 targets:
   OpenBattery:
@@ -72,6 +77,9 @@ targets:
         product: NIOFoundationCompat
       - package: swift-nio-ssl
         product: NIOSSL
+      # Updates from GitHub Releases, for the Developer ID build that ships there.
+      - package: openupdater
+        product: OpenUpdater
     settings:
       base:
         PRODUCT_NAME: OpenBattery
