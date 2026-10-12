@@ -174,11 +174,22 @@ jobs:
           BUILD: ${{ needs.prepare.outputs.build }}
         run: bundle exec fastlane mac release_github version:"$VERSION" build_number:"$BUILD"
 
+      # Built before the private key is in the environment: compiling a
+      # package runs its manifest, and the key only has to reach the binary.
+      # Same revision project.yml pins, so signer and verifier never drift.
+      - name: Build openupdater-cli
+        run: |
+          REVISION=$(grep -A2 '^  openupdater:' project.yml | sed -n 's/.*revision: *//p')
+          git init -q /tmp/openupdater
+          git -C /tmp/openupdater fetch -q --depth 1 https://github.com/Im-Fran/openupdater.git "$REVISION"
+          git -C /tmp/openupdater checkout -q FETCH_HEAD
+          swift build -q -c release --package-path /tmp/openupdater --product openupdater-cli
+          cp "$(swift build -c release --package-path /tmp/openupdater --show-bin-path)/openupdater-cli" /tmp/openupdater-cli
+
       # OpenUpdater installs the zip only with an Ed25519 signature from this
-      # key, so the zip must not change after this step. The CLI is built from
-      # the revision project.yml pins, and the signature is checked against the
-      # public key inside the app just built: a secret that does not match it
-      # would publish an update no installed copy can accept.
+      # key, so the zip must not change after this step. The signature is
+      # checked against the public key inside the app just built: a secret
+      # that does not match it would publish an update no copy can accept.
       - name: Sign the update
         env:
           OPENUPDATER_PRIVATE_KEY: ${{ secrets.OPENUPDATER_PRIVATE_KEY }}
@@ -188,14 +199,10 @@ jobs:
             echo "::error::Missing secret OPENUPDATER_PRIVATE_KEY — private key from openupdater-cli generate-keys"
             exit 1
           fi
-          REVISION=$(grep -A2 '^  openupdater:' project.yml | sed -n 's/.*revision: *//p')
-          git init -q /tmp/openupdater
-          git -C /tmp/openupdater fetch -q --depth 1 https://github.com/Im-Fran/openupdater.git "$REVISION"
-          git -C /tmp/openupdater checkout -q FETCH_HEAD
           ZIP="build/OpenBattery-$VERSION.zip"
           PUBLIC_KEY=$(/usr/libexec/PlistBuddy -c "Print OpenUpdaterPublicKey" build/OpenBattery.app/Contents/Info.plist)
-          swift run -q --package-path /tmp/openupdater openupdater-cli sign "$ZIP"
-          swift run -q --package-path /tmp/openupdater openupdater-cli verify "$ZIP" "$PUBLIC_KEY"
+          /tmp/openupdater-cli sign "$ZIP"
+          /tmp/openupdater-cli verify "$ZIP" "$PUBLIC_KEY"
 
       # Re-running a tag replaces its files rather than failing on the Release
       # the first run created.
