@@ -1,14 +1,20 @@
+import OpenUpdater
 import ServiceManagement
 import SwiftUI
 
 /// The Settings window (⌘,): toolbar-tabbed panes, as on every Mac app.
 struct SettingsView: View {
+    let updater: Updater
+
     var body: some View {
         TabView {
             GeneralSettingsPane()
                 .tabItem { Label("General", systemImage: "gearshape") }
             MenuBarSettingsPane()
                 .tabItem { Label("Menu Bar", systemImage: "menubar.rectangle") }
+            UpdaterSettingsView(updater: updater)
+                .sizedToContent()
+                .tabItem { Label("Updates", systemImage: "arrow.down.circle") }
         }
         .frame(width: 520)
     }

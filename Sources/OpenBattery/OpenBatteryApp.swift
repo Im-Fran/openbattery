@@ -1,4 +1,5 @@
 import AppKit
+import OpenUpdater
 import SwiftUI
 
 @main
@@ -6,8 +7,16 @@ struct OpenBatteryApp: App {
     @StateObject private var monitor = BatteryMonitor()
     @StateObject private var caffeine = CaffeineController()
     @StateObject private var devices = DeviceMonitor()
+    // One for the app's lifetime, started once: it owns the check schedule.
+    @State private var updater = Updater(
+        repo: "Im-Fran/openbattery",
+        publicKey: Bundle.main.object(forInfoDictionaryKey: "OpenUpdaterPublicKey") as? String ?? ""
+    )
 
-    init() { DockPolicy.start() }
+    init() {
+        DockPolicy.start()
+        updater.start()
+    }
 
     var body: some Scene {
         MenuBarExtra {
@@ -29,10 +38,15 @@ struct OpenBatteryApp: App {
         }
         .windowResizability(.contentMinSize)
         .defaultPosition(.center)
-        .commands { BatteryInfoCommands(snapshot: monitor.snapshot) }
+        .commands {
+            BatteryInfoCommands(snapshot: monitor.snapshot)
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { updater.checkNow() }
+            }
+        }
 
         Settings {
-            SettingsView()
+            SettingsView(updater: updater)
         }
     }
 }
