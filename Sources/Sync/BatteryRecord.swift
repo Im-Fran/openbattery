@@ -126,3 +126,25 @@ struct SyncedDevice: Identifiable, Equatable {
         return result
     }
 }
+
+/// Everything iCloud holds for one device, for the screen that shows and
+/// clears it.
+struct SyncedHistory: Identifiable, Equatable {
+    /// Named as it last called itself.
+    var device: SyncDevice
+    var count: Int
+    var oldest: Date
+    var newest: Date
+
+    var id: String { device.id }
+
+    /// One entry per device ID, most recently heard from first.
+    static func summaries(from records: [BatteryRecord]) -> [SyncedHistory] {
+        Dictionary(grouping: records, by: \.deviceID).values.compactMap { group in
+            guard let latest = group.max(by: { $0.date < $1.date }),
+                  let first = group.min(by: { $0.date < $1.date }) else { return nil }
+            return SyncedHistory(device: latest.device, count: group.count, oldest: first.date, newest: latest.date)
+        }
+        .sorted { $0.newest > $1.newest }
+    }
+}

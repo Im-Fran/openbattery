@@ -31,7 +31,7 @@ struct OpenBatteryiOSApp: App {
     }
 }
 
-/// Two tabs: the device in your hand, and every device on your iCloud account.
+/// The device in your hand, every device on your iCloud account, and settings.
 struct RootView: View {
     private let isPad = UIDevice.current.userInterfaceIdiom == .pad
 
@@ -42,6 +42,9 @@ struct RootView: View {
             }
             Tab("Devices", systemImage: "macbook.and.iphone") {
                 DevicesView()
+            }
+            Tab("Settings", systemImage: "gearshape") {
+                SettingsView()
             }
         }
     }

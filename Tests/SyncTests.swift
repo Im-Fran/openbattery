@@ -32,6 +32,24 @@ final class SyncTests: XCTestCase {
         XCTAssertEqual(record.device, mac)
     }
 
+    // MARK: Synced data
+
+    func testSummariesCountEachDeviceAndKeepItsLatestName() {
+        let renamed = SyncDevice(id: "mac", name: "Work Mac", model: "Mac15,7")
+        let phone = SyncDevice(id: "phone", name: "iPhone", model: "iPhone17,1")
+        let records = [
+            BatteryRecord(device: mac, snapshot: snap(50), date: t0),
+            BatteryRecord(device: phone, snapshot: snap(90), date: t0.addingTimeInterval(60)),
+            BatteryRecord(device: renamed, snapshot: snap(40), date: t0.addingTimeInterval(120)),
+        ]
+        let summaries = SyncedHistory.summaries(from: records)
+        XCTAssertEqual(summaries.map(\.id), ["mac", "phone"])
+        XCTAssertEqual(summaries[0].device.name, "Work Mac")
+        XCTAssertEqual(summaries[0].count, 2)
+        XCTAssertEqual(summaries[0].oldest, t0)
+        XCTAssertEqual(summaries[0].newest, t0.addingTimeInterval(120))
+    }
+
     // MARK: Device list
 
     func testLatestKeepsTheNewestPerDeviceNewestFirst() {
@@ -109,6 +127,19 @@ final class SyncTests: XCTestCase {
 
         store.publish(snap(49), for: mac, at: t0.addingTimeInterval(CloudStore.minimumSpacing))
         XCTAssertEqual(try store.container.mainContext.fetchCount(FetchDescriptor<BatteryRecord>()), 2)
+    }
+
+    func testForcePublishSkipsSpacingAndDeleteClearsOneDevice() throws {
+        let store = CloudStore(inMemory: true)
+        let phone = SyncDevice(id: "phone", name: "iPhone", model: "iPhone17,1")
+        store.publish(snap(50), for: mac, at: t0)
+        store.publish(snap(50), for: mac, at: t0.addingTimeInterval(60), force: true)
+        store.publish(snap(90), for: phone, at: t0)
+        let context = store.container.mainContext
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<BatteryRecord>()), 3)
+
+        try store.deleteHistory(of: mac.id)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<BatteryRecord>()).map(\.deviceID), ["phone"])
     }
 
     func testPublishIgnoresAMissingBattery() throws {

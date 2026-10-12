@@ -12,6 +12,8 @@ struct SettingsView: View {
                 .tabItem { Label("General", systemImage: "gearshape") }
             MenuBarSettingsPane()
                 .tabItem { Label("Menu Bar", systemImage: "menubar.rectangle") }
+            ICloudSettingsPane()
+                .tabItem { Label("iCloud", systemImage: "icloud") }
             UpdaterSettingsView(updater: updater)
                 .sizedToContent()
                 .tabItem { Label("Updates", systemImage: "arrow.down.circle") }
@@ -119,6 +121,24 @@ private struct GeneralSettingsPane: View {
             .announcement: message,
             .priority: NSAccessibilityPriorityLevel.high.rawValue,
         ])
+    }
+}
+
+// MARK: - iCloud
+
+private struct ICloudSettingsPane: View {
+    var body: some View {
+        Form {
+            CloudSyncSection {
+                // Detailed, like every reading this Mac keeps: an iPhone opens
+                // the Mac's entry for its health and cycles.
+                CloudStore.shared.publish(BatteryReader.read(.detailed), for: .current, force: true)
+            }
+            SyncedDataSection()
+        }
+        .formStyle(.grouped)
+        .sizedToContent()
+        .modelContainer(CloudStore.shared.container)
     }
 }
 
