@@ -3,6 +3,7 @@ import SwiftUI
 struct PopoverView: View {
     @EnvironmentObject private var monitor: BatteryMonitor
     @EnvironmentObject private var caffeine: CaffeineController
+    @StateObject private var energy = AppEnergyMonitor()
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
 
@@ -26,6 +27,10 @@ struct PopoverView: View {
                 .padding(.horizontal, Self.inset)
                 .padding(.vertical, 10)
             separator
+            apps
+                .padding(.horizontal, Self.inset)
+                .padding(.vertical, 10)
+            separator
             ChargeLimitSection()
             .padding(.horizontal, Self.inset)
             .padding(.vertical, 8)
@@ -42,6 +47,7 @@ struct PopoverView: View {
         .frame(width: 300)
         .onAppear { monitor.beginDetailUpdates() }
         .onDisappear { monitor.endDetailUpdates() }
+        .task { await energy.run() }
     }
 
     private var separator: some View {
@@ -95,6 +101,39 @@ struct PopoverView: View {
             stat("Battery", Fmt.watts(snapshot.batteryWatts, signed: true))
             stat("System", Fmt.watts(snapshot.systemWatts))
             stat("Temperature", Fmt.celsius(snapshot.temperature))
+        }
+    }
+
+    private var apps: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Using Significant Energy")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.subdued)
+                .accessibilityAddTraits(.isHeader)
+            if let top = energy.top {
+                if top.isEmpty {
+                    Text("No apps using significant energy").foregroundStyle(.subdued)
+                }
+                ForEach(top) { app in
+                    HStack(spacing: 6) {
+                        Image(nsImage: NSWorkspace.shared.icon(forFile: app.bundlePath))
+                            .resizable()
+                            .frame(width: 16, height: 16)
+                            .accessibilityHidden(true)
+                        Text(app.name).lineLimit(1).truncationMode(.middle)
+                        Spacer()
+                        // Two places under a watt: most apps idle there, and
+                        // "0.0 W" would read as nothing at all.
+                        Text(String(format: app.watts < 1 ? "%.2f W" : "%.1f W", app.watts))
+                            .monospacedDigit()
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(app.name)
+                    .accessibilityValue(String(format: "%.2f watts", app.watts))
+                }
+            } else {
+                Text("Measuring…").foregroundStyle(.subdued)
+            }
         }
     }
 

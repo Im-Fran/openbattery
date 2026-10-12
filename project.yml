@@ -105,6 +105,7 @@ targets:
     sources:
       - Tests
       - Sources/Sync
+      - path: Sources/OpenBattery/AppEnergy.swift
       - path: Sources/OpenBattery/BatteryDecoding.swift
       - path: Sources/OpenBattery/BatterySnapshot.swift
       - path: Sources/OpenBattery/Devices/DeviceBattery.swift
