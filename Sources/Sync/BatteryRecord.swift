@@ -78,6 +78,9 @@ struct SyncedDevice: Identifiable, Equatable {
     var snapshot: BatterySnapshot
     /// Arrived over the local network just now rather than through iCloud.
     var isLive = false
+    /// The newest reading a Mac took of this device over usbmuxd: the power
+    /// and health iOS never tells an app. Set by `listed`.
+    var relayedReading: RelayedReading?
 
     var id: String { device.id }
 
@@ -124,6 +127,35 @@ struct SyncedDevice: Identifiable, Equatable {
             ?? relayed.first { devices[$0].device.model == device.model }
     }
 
+    /// Everything a device list shows: one entry per physical device, live
+    /// readings over synced ones, and each device's freshest Mac reading,
+    /// whether it came through iCloud or straight from a Mac nearby.
+    static func listed(records: [BatteryRecord], live: [SyncedDevice],
+                       liveRelayed: [String: RelayedReading]) -> [SyncedDevice] {
+        merged(overlaying(live, on: latest(from: records))).map { device in
+            var device = device
+            if let fresh = liveRelayed[device.id], fresh.date > device.relayedReading?.date ?? .distantPast {
+                device.relayedReading = fresh
+            }
+            return device
+        }
+    }
+
+    /// The device's own charge with the power and health a Mac last read from
+    /// it, for views that show one snapshot. The two can be minutes apart,
+    /// which `RelayedReading.isStale` is there to say.
+    var combinedSnapshot: BatterySnapshot {
+        guard let relayed = relayedReading, device.relayedBy == nil else { return snapshot }
+        var combined = relayed.snapshot
+        combined.percentage = snapshot.percentage
+        combined.isCharging = snapshot.isCharging
+        combined.isPluggedIn = snapshot.isPluggedIn
+        combined.isFullyCharged = snapshot.isFullyCharged
+        combined.isPresent = snapshot.isPresent
+        combined.lowPowerMode = snapshot.lowPowerMode
+        return combined
+    }
+
     /// One entry per physical device for a list: an iPhone that publishes
     /// itself and was also read by a Mac would otherwise appear twice under
     /// the same name. The phone's own entry stays — it is the one that keeps
@@ -132,10 +164,19 @@ struct SyncedDevice: Identifiable, Equatable {
         // By position: the two entries may share an ID.
         var absorbed = IndexSet()
         let result = devices.map { device -> SyncedDevice in
-            guard device.device.relayedBy == nil, device.device.kind != .mac,
+            if let mac = device.device.relayedBy {
+                // A Mac's reading with nothing to fold into is its own record.
+                var relayed = device
+                relayed.relayedReading = RelayedReading(mac: mac, date: device.date, snapshot: device.snapshot)
+                return relayed
+            }
+            guard device.device.kind != .mac,
                   let index = relayedIndex(for: device.device, in: devices) else { return device }
             absorbed.insert(index)
             var merged = device
+            let source = devices[index]
+            merged.relayedReading = RelayedReading(mac: source.device.relayedBy ?? "", date: source.date,
+                                                   snapshot: source.snapshot)
             let health = devices[index].snapshot
             merged.snapshot.cycleCount = merged.snapshot.cycleCount ?? health.cycleCount
             merged.snapshot.fullChargeCapacityMAh = merged.snapshot.fullChargeCapacityMAh ?? health.fullChargeCapacityMAh
@@ -146,6 +187,20 @@ struct SyncedDevice: Identifiable, Equatable {
         }
         return result.indices.filter { !absorbed.contains($0) }.map { result[$0] }
     }
+}
+
+/// A Mac's usbmuxd reading of an iPhone or iPad, kept beside the device's own.
+struct RelayedReading: Codable, Equatable {
+    /// The Mac that read it, by name.
+    var mac: String
+    var date: Date
+    var snapshot: BatterySnapshot
+
+    /// Power moves by the second; past five minutes the numbers are history
+    /// and the screen says so.
+    static let freshness: TimeInterval = 5 * 60
+
+    func isStale(at now: Date = .now) -> Bool { now.timeIntervalSince(date) > Self.freshness }
 }
 
 extension SyncDevice {

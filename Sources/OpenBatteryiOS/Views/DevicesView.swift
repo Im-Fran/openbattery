@@ -15,8 +15,8 @@ struct DevicesView: View {
     @State private var iCloudOn = FileManager.default.ubiquityIdentityToken != nil
 
     var body: some View {
-        let devices = SyncedDevice.merged(SyncedDevice.overlaying(Array(LiveLink.shared.peers.values),
-                                                                  on: SyncedDevice.latest(from: records)))
+        let devices = SyncedDevice.listed(records: records, live: Array(LiveLink.shared.peers.values),
+                                          liveRelayed: LiveLink.shared.relayed)
         NavigationSplitView {
             Group {
                 // Devices win over the iCloud check: what is already in the

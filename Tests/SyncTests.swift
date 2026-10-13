@@ -81,6 +81,54 @@ final class SyncTests: XCTestCase {
         XCTAssertEqual(result.map(\.isLive), [true, true, false])
     }
 
+    // MARK: Relayed power and health
+
+    func testListedKeepsTheMacsReadingBesideThePhonesOwn() {
+        var health = snap(40, charging: true, plugged: true)
+        health.cycleCount = 312
+        health.volts = 4.1
+        let phone = SyncDevice(id: "phone", name: "iPhone", model: "iPhone17,1")
+        let records = [
+            BatteryRecord(device: phone, snapshot: snap(60), date: t0.addingTimeInterval(600)),
+            BatteryRecord(device: SyncDevice(id: "phone", name: "iPhone", model: "iPhone17,1", relayedBy: "MacBook"),
+                          snapshot: health, date: t0),
+        ]
+        let listed = SyncedDevice.listed(records: records, live: [], liveRelayed: [:])
+        XCTAssertEqual(listed.count, 1)
+        XCTAssertEqual(listed[0].relayedReading?.mac, "MacBook")
+        // Power and health from the Mac, charge from the phone's newer record.
+        let combined = listed[0].combinedSnapshot
+        XCTAssertEqual(combined.volts, 4.1)
+        XCTAssertEqual(combined.cycleCount, 312)
+        XCTAssertEqual(combined.percentage, 60)
+        XCTAssertFalse(combined.isCharging)
+
+        // A Mac nearby that just read it wins over the older one in iCloud.
+        var fresher = health
+        fresher.volts = 4.3
+        let live = RelayedReading(mac: "Studio", date: t0.addingTimeInterval(900), snapshot: fresher)
+        let relisted = SyncedDevice.listed(records: records, live: [], liveRelayed: ["phone": live])
+        XCTAssertEqual(relisted[0].relayedReading?.mac, "Studio")
+        XCTAssertEqual(relisted[0].combinedSnapshot.volts, 4.3)
+    }
+
+    func testRelayedReadingGoesStaleAfterFiveMinutes() {
+        let reading = RelayedReading(mac: "MacBook", date: t0, snapshot: snap(50))
+        XCTAssertFalse(reading.isStale(at: t0.addingTimeInterval(RelayedReading.freshness)))
+        XCTAssertTrue(reading.isStale(at: t0.addingTimeInterval(RelayedReading.freshness + 1)))
+    }
+
+    /// A build from before relayed readings and read requests still talks to
+    /// this one.
+    func testLiveMessageFromAnOlderBuildStillDecodes() throws {
+        let old = LiveMessage(id: "mac", name: "MacBook", model: "Mac15,7", snapshot: snap(40))
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(old)) as! [String: Any]
+        json["relayed"] = nil
+        json["wantsReading"] = nil
+        var buffer = try JSONSerialization.data(withJSONObject: json) + Data([0x0A])
+        XCTAssertEqual(LiveMessage.unframe(&buffer), [old])
+    }
+
     // MARK: Device list
 
     func testLatestKeepsTheNewestPerDeviceNewestFirst() {

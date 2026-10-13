@@ -64,6 +64,15 @@ struct DeviceSourcePicker: View {
             // listed. Said once, quietly, rather than in an alert.
             Text(DeviceError.isSandboxed ? "Not available in the App Store version"
                                          : "Can't reach connected devices")
+        } else if let synced = selectedCloud, let relayed = synced.relayedReading,
+                  synced.device.relayedBy == nil, relayed.isStale() {
+            // The charge is current but the power and health under it are
+            // not: say how old, and how to refresh them.
+            Label("Power and health from \(Fmt.relative(relayed.date)) — connect it to update",
+                  systemImage: "exclamationmark.triangle.fill")
+                .labelStyle(.titleAndIcon)
+                .symbolRenderingMode(.multicolor)
+                .help("Read by \(relayed.mac). The charge shown is newer.")
         } else if let synced = selectedCloud, synced.isLive {
             Label("Live over the local network", systemImage: "dot.radiowaves.left.and.right")
                 .labelStyle(.titleAndIcon)

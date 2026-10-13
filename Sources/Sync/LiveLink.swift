@@ -27,6 +27,12 @@ final class LiveLink {
 
     /// The other devices connected right now, by device ID.
     private(set) var peers: [String: SyncedDevice] = [:]
+    /// The freshest Mac reading of each device that a Mac nearby has shared,
+    /// by device ID — this one's included, which is how an iPad learns its own
+    /// cycle count from a Mac on the same network.
+    private(set) var relayed: [String: RelayedReading] = [:]
+    /// Called on a Mac when a device nearby asks to be read; see `DeviceHub`.
+    var onReadingRequest: ((SyncDevice) -> Void)?
 
     private var listener: NWListener?
     private var browser: NWBrowser?
@@ -43,6 +49,8 @@ final class LiveLink {
     private var buffers: [ObjectIdentifier: Data] = [:]
     private var key: Data?
     private var lastSnapshot: BatterySnapshot?
+    /// What this Mac read over usbmuxd, sent along with every message.
+    private var sharing: [String: RelayedReading] = [:]
 
     nonisolated private static let log = Logger(subsystem: "cl.franciscosolis.openbattery", category: "live")
 
@@ -113,6 +121,18 @@ final class LiveLink {
         connections.values.forEach(send)
     }
 
+    /// Hands a reading this Mac took of another device to everyone nearby.
+    func share(_ reading: RelayedReading, for id: String) {
+        sharing[id] = reading
+        absorb([id: reading])
+        connections.values.forEach(send)
+    }
+
+    /// Asks the Macs nearby to read this device over usbmuxd and share it.
+    func requestReading() {
+        connections.values.forEach { send(to: $0, wantsReading: true) }
+    }
+
     // MARK: Connections
 
     private func browsed(_ results: Set<NWBrowser.Result>, myName: String) {
@@ -156,9 +176,15 @@ final class LiveLink {
     }
 
     private func send(to connection: NWConnection) {
+        send(to: connection, wantsReading: false)
+    }
+
+    private func send(to connection: NWConnection, wantsReading: Bool) {
         guard let lastSnapshot else { return }
         let me = SyncDevice.current
-        let message = LiveMessage(id: me.id, name: me.name, model: me.model, snapshot: lastSnapshot)
+        let message = LiveMessage(id: me.id, name: me.name, model: me.model, snapshot: lastSnapshot,
+                                  relayed: sharing.isEmpty ? nil : sharing,
+                                  wantsReading: wantsReading ? true : nil)
         guard let data = try? LiveMessage.frame(message) else { return }
         connection.send(content: data, completion: .contentProcessed { _ in })
     }
@@ -189,6 +215,16 @@ final class LiveLink {
         peers[message.id] = SyncedDevice(
             device: SyncDevice(id: message.id, name: message.name, model: message.model),
             date: .now, snapshot: message.snapshot, isLive: true)
+        absorb(message.relayed ?? [:])
+        if message.wantsReading == true {
+            onReadingRequest?(SyncDevice(id: message.id, name: message.name, model: message.model))
+        }
+    }
+
+    private func absorb(_ readings: [String: RelayedReading]) {
+        for (id, reading) in readings where reading.date > relayed[id]?.date ?? .distantPast {
+            relayed[id] = reading
+        }
     }
 
     private func drop(_ connection: NWConnection) {
@@ -334,6 +370,11 @@ struct LiveMessage: Codable, Equatable {
     var name: String
     var model: String
     var snapshot: BatterySnapshot
+    /// Readings the sender, a Mac, took of other devices. Optional on the wire
+    /// so an older build's messages still decode.
+    var relayed: [String: RelayedReading]?
+    /// Asks a Mac to read the sender over usbmuxd and share the result.
+    var wantsReading: Bool?
 
     static func frame(_ message: LiveMessage) throws -> Data {
         try JSONEncoder().encode(message) + Data([0x0A])

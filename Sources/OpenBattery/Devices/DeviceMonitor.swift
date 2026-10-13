@@ -40,8 +40,12 @@ final class DeviceMonitor: ObservableObject {
     /// Each device's own sync ID by UDID, once its OpenBattery has said which
     /// it is. On this Mac only; it is what lets one phone be one entry whether
     /// it arrives by cable, over the network or through iCloud.
-    @Published private(set) var syncIDs = UserDefaults.standard
-        .dictionary(forKey: DeviceMonitor.syncIDsKey) as? [String: String] ?? [:]
+    @Published private(set) var syncIDs = DeviceMonitor.storedSyncIDs
+
+    /// The pairings learned so far, for `DeviceHub` too.
+    static var storedSyncIDs: [String: String] {
+        UserDefaults.standard.dictionary(forKey: syncIDsKey) as? [String: String] ?? [:]
+    }
     /// The selected device's battery, or nil while the Mac is showing, the read
     /// has not landed yet, or it failed.
     @Published private(set) var snapshot: BatterySnapshot?
@@ -286,9 +290,14 @@ final class DeviceMonitor: ObservableObject {
             // one are one device everywhere; until then under a hash, never
             // the UDID. The store spaces these out itself, so a five-second
             // cadence costs nothing extra.
+            let cloudID = syncIDs[udid] ?? SyncDevice.relayedID(udid: udid)
             CloudStore.shared.publish(reading.snapshot, for: SyncDevice(
-                id: syncIDs[udid] ?? SyncDevice.relayedID(udid: udid), name: reading.identity.displayName,
+                id: cloudID, name: reading.identity.displayName,
                 model: reading.identity.model ?? "", relayedBy: SyncDevice.current.name))
+            // And straight to the devices nearby, which need not wait for
+            // iCloud's quarter-hour spacing: the device itself among them.
+            LiveLink.shared.share(RelayedReading(mac: SyncDevice.current.name, date: .now,
+                                                 snapshot: reading.snapshot), for: cloudID)
         } catch let error as DeviceError {
             failure = error
             snapshot = nil
