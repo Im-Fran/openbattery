@@ -15,7 +15,8 @@ struct DevicesView: View {
     @State private var iCloudOn = FileManager.default.ubiquityIdentityToken != nil
 
     var body: some View {
-        let devices = SyncedDevice.merged(SyncedDevice.latest(from: records))
+        let devices = SyncedDevice.merged(SyncedDevice.overlaying(Array(LiveLink.shared.peers.values),
+                                                                  on: SyncedDevice.latest(from: records)))
         NavigationSplitView {
             Group {
                 // Devices win over the iCloud check: what is already in the
@@ -91,7 +92,7 @@ private struct DeviceRow: View {
     @Environment(\.dynamicTypeSize) private var typeSize
 
     private var snapshot: BatterySnapshot { device.snapshot }
-    private var isStale: Bool { device.isStale(at: now) }
+    private var isStale: Bool { !device.isLive && device.isStale(at: now) }
 
     /// "This iPhone" for the phone in hand, "Via MacBook Pro" for one a Mac
     /// read over a cable, so a reading is never mistaken for a live one.
@@ -101,7 +102,9 @@ private struct DeviceRow: View {
     }
 
     /// "On battery · 21 min ago": one line instead of two keeps rows short.
-    private var subtitle: String { "\(snapshot.listStatus) · \(device.freshness(at: now))" }
+    private var subtitle: String {
+        "\(snapshot.listStatus) · \(device.isLive ? "Live" : device.freshness(at: now))"
+    }
 
     var body: some View {
         // At accessibility sizes a row side by side leaves each column a few

@@ -36,6 +36,10 @@ struct CloudSyncSection: View {
                     LabeledContent("Last Synced",
                                    value: sync.lastSync.map { Fmt.relative($0, now: context.date) } ?? "Not since launch")
                 }
+                LabeledContent("Nearby") {
+                    let names = LiveLink.shared.peers.values.map(\.device.name).sorted()
+                    Text(names.isEmpty ? "None" : names.formatted(.list(type: .and)))
+                }
                 Button("Sync Now") {
                     Task { await sync.syncNow(publish: publish) }
                 }

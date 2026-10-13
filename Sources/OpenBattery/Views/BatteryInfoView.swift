@@ -147,6 +147,7 @@ struct BatteryInfoView: View {
             AccessibilityNotification.Announcement("Reading \(name)").post()
         }
         .onChange(of: records, initial: true) { rebuildCloud() }
+        .onChange(of: LiveLink.shared.peers) { rebuildCloud() }
         .onChange(of: devices.source) { rebuildCloud() }
         // Plugging in the device being shown from iCloud swaps in the live
         // reading of the very same device, rather than leaving the picker
@@ -164,7 +165,9 @@ struct BatteryInfoView: View {
 
     private func rebuildCloud() {
         let thisMac = SyncDevice.current.id
-        synced = SyncedDevice.merged(SyncedDevice.latest(from: records)).filter { $0.id != thisMac }
+        synced = SyncedDevice.merged(SyncedDevice.overlaying(Array(LiveLink.shared.peers.values),
+                                                             on: SyncedDevice.latest(from: records)))
+            .filter { $0.id != thisMac }
         guard case .cloud(let id) = devices.source else { return }
         // Pruned, deleted elsewhere, or folded into its phone's own entry: a
         // selection matching no menu item leaves a blank, possibly disabled

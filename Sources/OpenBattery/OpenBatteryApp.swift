@@ -15,6 +15,7 @@ struct OpenBatteryApp: App {
 
     init() {
         DockPolicy.start()
+        LiveLink.shared.start()
         updater.start()
     }
 

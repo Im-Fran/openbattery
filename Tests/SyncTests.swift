@@ -50,6 +50,37 @@ final class SyncTests: XCTestCase {
         XCTAssertEqual(summaries[0].newest, t0.addingTimeInterval(120))
     }
 
+    // MARK: Live link
+
+    func testLiveMessagesSurviveSplitReads() throws {
+        let one = LiveMessage(id: "mac", name: "MacBook", model: "Mac15,7", snapshot: snap(40))
+        let two = LiveMessage(id: "phone", name: "iPhone", model: "iPhone17,1", snapshot: snap(90, charging: true))
+        let wire = try LiveMessage.frame(one) + LiveMessage.frame(two)
+        let cut = wire.count - 5
+
+        var buffer = Data(wire.prefix(cut))
+        XCTAssertEqual(LiveMessage.unframe(&buffer), [one])
+        buffer += wire.suffix(from: cut)
+        XCTAssertEqual(LiveMessage.unframe(&buffer), [two])
+        XCTAssertTrue(buffer.isEmpty)
+
+        var garbage = Data("not json\n".utf8)
+        XCTAssertEqual(LiveMessage.unframe(&garbage), [])
+    }
+
+    func testLiveReadingsReplaceSyncedOnes() {
+        let phone = SyncDevice(id: "phone", name: "iPhone", model: "iPhone17,1")
+        let synced = [SyncedDevice(device: mac, date: t0, snapshot: snap(50)),
+                      SyncedDevice(device: phone, date: t0, snapshot: snap(80))]
+        let live = [SyncedDevice(device: mac, date: t0.addingTimeInterval(600), snapshot: snap(45), isLive: true),
+                    SyncedDevice(device: SyncDevice(id: "new", name: "iPad", model: "iPad16,3"),
+                                 date: t0, snapshot: snap(70), isLive: true)]
+        let result = SyncedDevice.overlaying(live, on: synced)
+        XCTAssertEqual(result.map(\.id), ["new", "mac", "phone"])
+        XCTAssertEqual(result.first { $0.id == "mac" }?.snapshot.percentage, 45)
+        XCTAssertEqual(result.map(\.isLive), [true, true, false])
+    }
+
     // MARK: Device list
 
     func testLatestKeepsTheNewestPerDeviceNewestFirst() {

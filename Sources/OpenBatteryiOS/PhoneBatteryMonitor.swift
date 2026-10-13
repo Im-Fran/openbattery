@@ -48,6 +48,7 @@ final class PhoneBatteryMonitor {
     func refresh(force: Bool = false) {
         snapshot = Self.read()
         thermalState = ProcessInfo.processInfo.thermalState
+        LiveLink.shared.broadcast(snapshot)
         #if !targetEnvironment(simulator)
         // The simulator's reading is made up (see `read`), and a simulator
         // signed into iCloud would show it on the person's real Mac.

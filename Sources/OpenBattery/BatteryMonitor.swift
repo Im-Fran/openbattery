@@ -102,6 +102,7 @@ final class BatteryMonitor: ObservableObject {
         recordLoad(fresh.systemWatts)
         publishToCloud(fresh)
         // Equatable guard: no SwiftUI invalidation when nothing actually moved.
+        LiveLink.shared.broadcast(fresh)
         if fresh != snapshot { snapshot = fresh }
     }
 

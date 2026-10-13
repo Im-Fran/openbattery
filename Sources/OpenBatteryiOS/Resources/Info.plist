@@ -60,5 +60,13 @@
 	</array>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 FranciscoSolis E.I.R.L. (RUT 78.473.345-9). MIT License.</string>
+	<!-- The live link: devices on the same network find each other over
+	     Bonjour while both apps are open. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>OpenBattery finds your other devices on this network to show their batteries live.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_openbattery._tcp</string>
+	</array>
 </dict>
 </plist>

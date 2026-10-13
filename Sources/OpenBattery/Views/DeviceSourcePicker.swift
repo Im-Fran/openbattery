@@ -64,6 +64,11 @@ struct DeviceSourcePicker: View {
             // listed. Said once, quietly, rather than in an alert.
             Text(DeviceError.isSandboxed ? "Not available in the App Store version"
                                          : "Can't reach connected devices")
+        } else if let synced = selectedCloud, synced.isLive {
+            Label("Live over the local network", systemImage: "dot.radiowaves.left.and.right")
+                .labelStyle(.titleAndIcon)
+                .help(cloudSubtitle(for: synced.device))
+                .accessibilityValue(cloudSubtitle(for: synced.device))
         } else if let synced = selectedCloud {
             // A synced reading can be hours old, and every tab below shows it
             // as if it were now; this line is what keeps that honest.

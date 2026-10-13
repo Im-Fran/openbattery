@@ -75,8 +75,17 @@ struct SyncedDevice: Identifiable, Equatable {
     var device: SyncDevice
     var date: Date
     var snapshot: BatterySnapshot
+    /// Arrived over the local network just now rather than through iCloud.
+    var isLive = false
 
     var id: String { device.id }
+
+    /// Live readings replace the synced ones of the same device; a device
+    /// seen only live, before its first record syncs, is added.
+    static func overlaying(_ live: [SyncedDevice], on synced: [SyncedDevice]) -> [SyncedDevice] {
+        let liveIDs = Set(live.map(\.id))
+        return live.sorted { $0.device.name.localizedStandardCompare($1.device.name) == .orderedAscending } + synced.filter { !liveIDs.contains($0.id) }
+    }
 
     /// One entry per device, newest reading first. `records` may be in any
     /// order; records whose payload no longer decodes are skipped.

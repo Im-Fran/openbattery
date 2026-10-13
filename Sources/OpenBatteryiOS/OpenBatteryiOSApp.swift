@@ -15,8 +15,12 @@ struct OpenBatteryiOSApp: App {
         // away is the last chance to ask for one later.
         .onChange(of: scenePhase) { _, phase in
             switch phase {
-            case .active: PhoneBatteryMonitor.shared.refresh()
-            case .background: PhoneBatteryMonitor.scheduleRefresh()
+            case .active:
+                LiveLink.shared.start()
+                PhoneBatteryMonitor.shared.refresh()
+            case .background:
+                LiveLink.shared.stop()
+                PhoneBatteryMonitor.scheduleRefresh()
             default: break
             }
         }
