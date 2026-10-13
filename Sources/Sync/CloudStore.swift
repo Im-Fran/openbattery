@@ -35,6 +35,9 @@ final class CloudStore {
     private static let log = Logger(subsystem: "cl.franciscosolis.openbattery", category: "sync")
 
     init(inMemory: Bool = false) {
+        // Listening before the store opens: the mirror's first setup and
+        // export run right away, and a failure there is the one to show.
+        _ = CloudSync.shared
         let schema = Schema([BatteryRecord.self])
         do {
             // Named: the Direct build is not sandboxed, so an unnamed store

@@ -27,6 +27,10 @@ struct CloudSyncSection: View {
                         }
                     } else if sync.lastError != nil {
                         Text("Failed")
+                    } else if sync.lastSync == nil {
+                        // Nothing has gone either way yet, which is not the
+                        // same as being up to date.
+                        Text("Waiting")
                     } else {
                         Text("Up to Date")
                     }
