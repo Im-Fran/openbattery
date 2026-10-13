@@ -105,13 +105,45 @@ final class SyncTests: XCTestCase {
     }
 
     func testRelayedMatchesOnModelOnlyWhenAMacReadIt() {
-        let own = SyncedDevice(device: SyncDevice(id: "a", name: "iPhone", model: "iPhone17,1"),
-                               date: t0, snapshot: snap(60))
+        let phone = SyncDevice(id: "a", name: "iPhone", model: "iPhone17,1")
+        let own = SyncedDevice(device: phone, date: t0, snapshot: snap(60))
         let relayed = SyncedDevice(device: SyncDevice(id: "udid", name: "iPhone", model: "iPhone17,1", relayedBy: "mac"),
                                    date: t0, snapshot: snap(60))
-        XCTAssertEqual(SyncedDevice.relayed(matching: "iPhone17,1", in: [own, relayed])?.id, "udid")
-        XCTAssertNil(SyncedDevice.relayed(matching: "iPhone17,1", in: [own]))
-        XCTAssertNil(SyncedDevice.relayed(matching: "iPhone16,2", in: [relayed]))
+        XCTAssertEqual(SyncedDevice.relayed(for: phone, in: [own, relayed])?.id, "udid")
+        XCTAssertNil(SyncedDevice.relayed(for: phone, in: [own]))
+        let other = SyncDevice(id: "b", name: "iPhone", model: "iPhone16,2")
+        XCTAssertNil(SyncedDevice.relayed(for: other, in: [relayed]))
+    }
+
+    /// Once a Mac knows the phone's own ID, its reading is filed under it: the
+    /// two share an ID, list once, and the ID wins over a same-model stranger.
+    func testRelayedUnderThePhonesOwnIDListsOnce() {
+        var health = snap(40)
+        health.cycleCount = 312
+        let phone = SyncDevice(id: "phone", name: "iPhone", model: "iPhone17,1")
+        let stranger = BatteryRecord(device: SyncDevice(id: "x", name: "Other", model: "iPhone17,1", relayedBy: "mac"),
+                                     snapshot: snap(10), date: t0.addingTimeInterval(120))
+        let records = [
+            BatteryRecord(device: phone, snapshot: snap(60), date: t0.addingTimeInterval(60)),
+            BatteryRecord(device: SyncDevice(id: "phone", name: "iPhone", model: "iPhone17,1", relayedBy: "mac"),
+                          snapshot: health, date: t0),
+            stranger,
+        ]
+        let latest = SyncedDevice.latest(from: records)
+        XCTAssertEqual(latest.count, 3)
+        XCTAssertEqual(SyncedDevice.relayed(for: phone, in: latest)?.snapshot.cycleCount, 312)
+
+        let merged = SyncedDevice.merged(latest)
+        XCTAssertEqual(merged.map(\.id), ["x", "phone"])
+        XCTAssertEqual(merged[1].snapshot.percentage, 60)
+        XCTAssertEqual(merged[1].snapshot.cycleCount, 312)
+    }
+
+    func testRelayedIDHidesTheUDID() {
+        let id = SyncDevice.relayedID(udid: "00008140-001A006A02E3001C")
+        XCTAssertEqual(id.count, 32)
+        XCTAssertFalse(id.contains("00008140"))
+        XCTAssertEqual(id, SyncDevice.relayedID(udid: "00008140-001A006A02E3001C"))
     }
 
     /// The phone's own entry stays and borrows the health only a Mac can read.

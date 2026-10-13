@@ -19,7 +19,7 @@ struct ThisDeviceView: View {
         let snapshot = monitor.snapshot
         // Sorted newest first, so the first match is this device's last save.
         let lastSaved = records.first { $0.deviceID == device.id }?.date
-        let relayed = SyncedDevice.relayed(matching: device.model, in: SyncedDevice.latest(from: records))
+        let relayed = SyncedDevice.relayed(for: device, in: SyncedDevice.latest(from: records))
 
         NavigationStack {
             List {

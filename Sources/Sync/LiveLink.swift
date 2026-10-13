@@ -12,7 +12,7 @@ import Security
 /// Every device advertises `_openbattery._tcp` over Bonjour and browses for
 /// the others. Connections are TLS with a pre-shared key that lives in iCloud
 /// Keychain, so only devices on the same Apple Account get past the handshake;
-/// anyone else on the network sees a service name and nothing more.
+/// anyone else on the network sees a random service name and nothing more.
 @MainActor
 @Observable
 final class LiveLink {
@@ -20,6 +20,10 @@ final class LiveLink {
 
     /// Listed under NSBonjourServices in both Info.plists.
     static let serviceType = "_openbattery._tcp"
+    /// Where an iPhone or iPad answers a Mac that reaches it through usbmuxd,
+    /// by cable or Wi-Fi, asking which synced device it is. Fixed, because
+    /// usbmuxd connects to a port number, not to a Bonjour name.
+    nonisolated static let identityPort: UInt16 = 52_017
 
     /// The other devices connected right now, by device ID.
     private(set) var peers: [String: SyncedDevice] = [:]
@@ -29,11 +33,18 @@ final class LiveLink {
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     /// Which device each connection turned out to be, once it said hello.
     private var peerIDs: [ObjectIdentifier: String] = [:]
+    /// The service name each outgoing connection was dialled to, so a browse
+    /// update arriving before the hello does not dial the same device again.
+    private var dialed: [ObjectIdentifier: String] = [:]
+    /// Fresh every start rather than the device ID: a name that stayed the same
+    /// on every network would let anyone on them follow this device around.
+    private var serviceName = UUID().uuidString
+    private var identityListener: NWListener?
     private var buffers: [ObjectIdentifier: Data] = [:]
     private var key: Data?
     private var lastSnapshot: BatterySnapshot?
 
-    private static let log = Logger(subsystem: "cl.franciscosolis.openbattery", category: "live")
+    nonisolated private static let log = Logger(subsystem: "cl.franciscosolis.openbattery", category: "live")
 
     private init() {}
 
@@ -48,12 +59,12 @@ final class LiveLink {
             return
         }
         self.key = key
-        let me = SyncDevice.current
+        serviceName = UUID().uuidString
+        let myName = serviceName
         do {
             let listener = try NWListener(using: Self.parameters(key: key))
-            // The device ID as the service name: unique, and it tells the
-            // browser which side should dial (see `browsed`).
-            listener.service = NWListener.Service(name: me.id, type: Self.serviceType)
+            // Unique, and it tells the browser which side dials (see `browsed`).
+            listener.service = NWListener.Service(name: myName, type: Self.serviceType)
             listener.newConnectionHandler = { [weak self] connection in
                 MainActor.assumeIsolated { self?.adopt(connection) }
             }
@@ -69,21 +80,27 @@ final class LiveLink {
 
         let browser = NWBrowser(for: .bonjour(type: Self.serviceType, domain: nil), using: Self.parameters(key: key))
         browser.browseResultsChangedHandler = { [weak self] results, _ in
-            MainActor.assumeIsolated { self?.browsed(results, myID: me.id) }
+            MainActor.assumeIsolated { self?.browsed(results, myName: myName) }
         }
         browser.start(queue: .main)
         self.browser = browser
+        #if os(iOS)
+        startIdentityListener()
+        #endif
     }
 
     /// Drops every connection; iOS suspends a backgrounded app's sockets anyway.
     func stop() {
         listener?.cancel()
         browser?.cancel()
+        identityListener?.cancel()
         listener = nil
         browser = nil
+        identityListener = nil
         connections.values.forEach { $0.cancel() }
         connections = [:]
         peerIDs = [:]
+        dialed = [:]
         buffers = [:]
         peers = [:]
     }
@@ -98,14 +115,16 @@ final class LiveLink {
 
     // MARK: Connections
 
-    private func browsed(_ results: Set<NWBrowser.Result>, myID: String) {
+    private func browsed(_ results: Set<NWBrowser.Result>, myName: String) {
         for result in results {
             guard case .service(let name, _, _, _) = result.endpoint,
                   // Only one side dials, or every pair would connect twice.
-                  name > myID,
-                  !peerIDs.values.contains(name) else { continue }
+                  name > myName,
+                  !dialed.values.contains(name) else { continue }
             guard let key else { return }
-            adopt(NWConnection(to: result.endpoint, using: Self.parameters(key: key)))
+            let connection = NWConnection(to: result.endpoint, using: Self.parameters(key: key))
+            dialed[ObjectIdentifier(connection)] = name
+            adopt(connection)
         }
     }
 
@@ -176,6 +195,7 @@ final class LiveLink {
         let id = ObjectIdentifier(connection)
         connections[id] = nil
         buffers[id] = nil
+        dialed[id] = nil
         if let peer = peerIDs.removeValue(forKey: id), !peerIDs.values.contains(peer) {
             peers[peer] = nil
         }
@@ -186,6 +206,73 @@ final class LiveLink {
         stop()
         start()
     }
+
+    // MARK: Identity
+
+    /// What this device answers on `identityPort`: its sync ID and the Mac's
+    /// fresh nonce, keyed with the shared secret. A Mac on the same Apple
+    /// Account computes the same for each ID it knows and finds the match. The
+    /// ID never crosses the wire, and with a new nonce every time no answer can
+    /// be replayed or used to recognise the device later.
+    nonisolated static func identityToken(for id: String, nonce: Data) -> Data? {
+        sharedKey().map { key in
+            Data(HMAC<SHA256>.authenticationCode(for: Data("OpenBattery identity \(id)".utf8) + nonce,
+                                                  using: SymmetricKey(data: key)))
+        }
+    }
+
+    /// Which of `ids` sent `token` for `nonce`, if any.
+    nonisolated static func id(answering token: Data, nonce: Data, among ids: some Sequence<String>) -> String? {
+        guard let key = sharedKey() else { return nil }
+        return ids.first { id in
+            HMAC<SHA256>.isValidAuthenticationCode(token, authenticating: Data("OpenBattery identity \(id)".utf8) + nonce,
+                                                   using: SymmetricKey(data: key))
+        }
+    }
+
+    #if os(iOS)
+    /// Answers one challenge per connection, in the framing lockdown uses (a
+    /// big-endian length, then a plist) so the Mac's existing usbmuxd client
+    /// speaks it unchanged. Loopback only: usbmuxd delivers a cabled Mac's
+    /// connection on the device itself, and nothing else needs to reach it.
+    private func startIdentityListener() {
+        let parameters = NWParameters.tcp
+        parameters.requiredInterfaceType = .loopback
+        guard let port = NWEndpoint.Port(rawValue: Self.identityPort),
+              let listener = try? NWListener(using: parameters, on: port) else { return }
+        let id = SyncDevice.current.id
+        listener.newConnectionHandler = { connection in
+            connection.start(queue: .main)
+            // ponytail: expects the whole request in one read, which a plist
+            // of a few hundred bytes over loopback always is.
+            connection.receive(minimumIncompleteLength: 4, maximumLength: 64 * 1024) { data, _, _, _ in
+                guard let reply = data.flatMap({ Self.identityReply(to: $0, id: id) }) else {
+                    connection.cancel()
+                    return
+                }
+                connection.send(content: reply, completion: .contentProcessed { _ in connection.cancel() })
+            }
+        }
+        listener.start(queue: .main)
+        identityListener = listener
+    }
+
+    /// The framed reply to a framed `["Nonce": …]` request; nil for anything
+    /// else, so a malformed or nonce-less request gets no token at all.
+    private nonisolated static func identityReply(to request: Data, id: String) -> Data? {
+        guard request.count > 4 else { return nil }
+        let length = request.prefix(4).reduce(0) { $0 << 8 | Int($1) }
+        guard length == request.count - 4,
+              let plist = try? PropertyListSerialization.propertyList(from: request.dropFirst(4), format: nil)
+                  as? [String: Any],
+              let nonce = plist["Nonce"] as? Data, (16...64).contains(nonce.count),
+              let token = identityToken(for: id, nonce: nonce),
+              let body = try? PropertyListSerialization.data(fromPropertyList: ["Token": token],
+                                                             format: .xml, options: 0) else { return nil }
+        var size = UInt32(body.count).bigEndian
+        return Data(bytes: &size, count: 4) + body
+    }
+    #endif
 
     // MARK: Security
 
@@ -213,7 +300,7 @@ final class LiveLink {
     /// The key every device on this Apple Account shares, made by whichever
     /// device got there first and synced by iCloud Keychain. Both apps sign
     /// with the same App ID, so they share its default access group.
-    private static func sharedKey() -> Data? {
+    nonisolated private static func sharedKey() -> Data? {
         let item: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: "cl.franciscosolis.openbattery.live",

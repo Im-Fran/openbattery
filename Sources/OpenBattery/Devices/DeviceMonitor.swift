@@ -2,6 +2,7 @@ import Combine
 import Foundation
 import NIOPosix
 import OSLog
+import SwiftData
 
 /// Publishes the devices usbmuxd can see and the battery of the selected one.
 ///
@@ -36,6 +37,11 @@ final class DeviceMonitor: ObservableObject {
     }
 
     @Published private(set) var devices: [DeviceIdentity] = []
+    /// Each device's own sync ID by UDID, once its OpenBattery has said which
+    /// it is. On this Mac only; it is what lets one phone be one entry whether
+    /// it arrives by cable, over the network or through iCloud.
+    @Published private(set) var syncIDs = UserDefaults.standard
+        .dictionary(forKey: DeviceMonitor.syncIDsKey) as? [String: String] ?? [:]
     /// The selected device's battery, or nil while the Mac is showing, the read
     /// has not landed yet, or it failed.
     @Published private(set) var snapshot: BatterySnapshot?
@@ -68,6 +74,8 @@ final class DeviceMonitor: ObservableObject {
     private var refreshTask: Task<Void, Never>?
     private var clients = 0
     private var inFlight = false
+    private var lastIdentityAttempt: [String: Date] = [:]
+    private static let syncIDsKey = "syncIDByUDID"
 
     deinit {
         timer?.invalidate()
@@ -104,6 +112,12 @@ final class DeviceMonitor: ObservableObject {
         Task { for session in closing { await session.close() } }
     }
 
+    /// Every ID this device may be filed under on iCloud or the live link:
+    /// its own once known, and the hash a Mac records it under until then.
+    func cloudIDs(for udid: String) -> Set<String> {
+        Set([SyncDevice.relayedID(udid: udid), udid] + [syncIDs[udid]].compactMap { $0 })
+    }
+
     /// The selected device's name, for the places that should say which device
     /// rather than "the device".
     var selectedName: String? {
@@ -136,6 +150,35 @@ final class DeviceMonitor: ObservableObject {
         let oldest = now.addingTimeInterval(-BatteryMonitor.loadWindow)
         load = load.filter { $0.date > oldest }
             + [BatteryMonitor.LoadSample(date: now, watts: watts)]
+    }
+
+    /// Asks each device's OpenBattery which synced device it is. Only works
+    /// while the app is open there, so a device not yet known is asked again
+    /// every half minute rather than on every five-second read.
+    private func learnSyncIDs() async {
+        let pending = devices.filter { syncIDs[$0.udid] == nil }
+        guard !pending.isEmpty else { return }
+        let known = knownSyncIDs()
+        for device in pending {
+            if let last = lastIdentityAttempt[device.udid], Date.now.timeIntervalSince(last) < 30 { continue }
+            lastIdentityAttempt[device.udid] = .now
+            // Fresh every time, so no answer is ever worth recording.
+            let nonce = Data((0..<32).map { _ in UInt8.random(in: .min ... .max) })
+            guard !Task.isCancelled, let session = sessions[device.udid],
+                  let token = await session.identityToken(nonce: nonce),
+                  let id = LiveLink.id(answering: token, nonce: nonce, among: known) else { continue }
+            syncIDs[device.udid] = id
+            UserDefaults.standard.set(syncIDs, forKey: Self.syncIDsKey)
+        }
+    }
+
+    /// The IDs devices publish themselves under: on iCloud and nearby.
+    // ponytail: fetches every self-published record to collect a handful of
+    // IDs, at most twice a minute while a device is still unknown.
+    private func knownSyncIDs() -> Set<String> {
+        let own = FetchDescriptor<BatteryRecord>(predicate: #Predicate { $0.relayedBy == nil })
+        let records = (try? CloudStore.shared.container.mainContext.fetch(own)) ?? []
+        return Set(records.map(\.deviceID)).union(LiveLink.shared.peers.keys)
     }
 
     private func refreshNow() {
@@ -217,6 +260,8 @@ final class DeviceMonitor: ObservableObject {
                                             isNetwork: devices[index].isNetwork)
         }
 
+        await learnSyncIDs()
+
         guard case .device(let udid) = source else { return }
         // A device that vanished while it was being shown keeps its place in the
         // picker and says so. Silently repointing every tab at the Mac would
@@ -237,11 +282,12 @@ final class DeviceMonitor: ObservableObject {
                 devices[index] = reading.identity
             }
             record(reading.snapshot)
-            // Relayed under the UDID, so it lines up with the same device's
-            // entry the next time it is plugged in. The store spaces these out
-            // itself, so a five-second cadence costs nothing extra.
+            // Under the phone's own ID once known, so its readings and this
+            // one are one device everywhere; until then under a hash, never
+            // the UDID. The store spaces these out itself, so a five-second
+            // cadence costs nothing extra.
             CloudStore.shared.publish(reading.snapshot, for: SyncDevice(
-                id: udid, name: reading.identity.displayName,
+                id: syncIDs[udid] ?? SyncDevice.relayedID(udid: udid), name: reading.identity.displayName,
                 model: reading.identity.model ?? "", relayedBy: SyncDevice.current.name))
         } catch let error as DeviceError {
             failure = error
