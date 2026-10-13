@@ -111,13 +111,17 @@ struct BatteryInfoView: View {
     /// The picker's iCloud group. A device that is plugged in right now is left
     /// out: it is already listed above with a live reading.
     private var cloudChoices: [SyncedDevice] {
-        synced.filter { cloud in !devices.devices.contains { $0.udid == cloud.id } }
+        synced.filter { cloud in !devices.devices.contains { devices.cloudIDs(for: $0.udid).contains(cloud.id) } }
     }
 
     var body: some View {
         VStack(spacing: 0) {
             DeviceSourcePicker(cloud: cloudChoices)
+            // Every state fills the window: an empty state is only as tall as
+            // its text, and left short the whole stack centres, opening a gap
+            // above the picker.
             content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         // Tall enough for the longest tab, so the window keeps still while
         // tabbing; wide enough for three stat tiles to sit side by side.
@@ -154,8 +158,8 @@ struct BatteryInfoView: View {
         // pointing at an entry that just left its list.
         .onChange(of: devices.devices) { _, connected in
             guard case .cloud(let id) = devices.source,
-                  connected.contains(where: { $0.udid == id }) else { return }
-            devices.source = .device(udid: id)
+                  let match = connected.first(where: { devices.cloudIDs(for: $0.udid).contains(id) }) else { return }
+            devices.source = .device(udid: match.udid)
         }
         .onChange(of: devices.failure) { _, failure in
             guard let failure, let message = failure.errorDescription else { return }
@@ -260,7 +264,6 @@ struct BatteryInfoView: View {
             // Reading a device is a round trip over a cable or the network, so
             // unlike the Mac there is a moment with nothing to show.
             ProgressView("Reading the battery…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
