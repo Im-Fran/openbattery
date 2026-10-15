@@ -101,7 +101,10 @@ final class CloudSync {
         }
         lastError = nil
         switch event.type {
-        case .import: lastImport = end
+        case .import:
+            lastImport = end
+            // Another device's reading just landed: the widgets show it too.
+            WidgetFeed.update()
         case .export: lastExport = end
         default: break
         }

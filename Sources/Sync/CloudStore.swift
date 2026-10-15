@@ -70,6 +70,7 @@ final class CloudStore {
         do { try context.save() } catch {
             Self.log.error("save failed: \(error.localizedDescription, privacy: .public)")
         }
+        WidgetFeed.update()
     }
 
     /// Spaced out, except when the battery changes direction or jumps: being
@@ -96,6 +97,7 @@ final class CloudStore {
         let records = try context.fetch(FetchDescriptor<BatteryRecord>(predicate: #Predicate { $0.deviceID == deviceID }))
         records.forEach(context.delete)
         try context.save()
+        WidgetFeed.update()
         lastPublished[deviceID] = nil
     }
 

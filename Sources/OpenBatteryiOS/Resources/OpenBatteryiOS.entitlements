@@ -11,6 +11,11 @@
 	<array>
 		<string>CloudKit</string>
 	</array>
+	<!-- Where the app leaves the device list for the widgets to read. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.cl.franciscosolis.openbattery</string>
+	</array>
 	<!-- development for Xcode builds, production for TestFlight and the App
 	     Store: each has to match the profile it is signed with. -->
 	<key>aps-environment</key>

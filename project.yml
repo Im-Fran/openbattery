@@ -80,6 +80,8 @@ targets:
       # Updates from GitHub Releases, for the Developer ID build that ships there.
       - package: openupdater
         product: OpenUpdater
+      # Embedded in Contents/PlugIns: the Mac's Batteries widget.
+      - target: OpenBatteryWidgetsMac
     settings:
       base:
         PRODUCT_NAME: OpenBattery
@@ -158,6 +160,55 @@ targets:
       configs:
         Release:
           APS_ENVIRONMENT: production
+          # Per target, not on the command line: a specifier passed to
+          # xcodebuild would land on the widget extension too. Takes effect
+          # under the manual signing the release lane switches to.
+          PROVISIONING_PROFILE_SPECIFIER: "match AppStore cl.franciscosolis.openbattery ios"
+    dependencies:
+      - target: OpenBatteryWidgets
+
+  # The Batteries widget: the charge of every device on the account, read from
+  # the list the apps leave in the App Group container. One bundle ID for both
+  # platforms, as with the apps.
+  OpenBatteryWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Sources/Widgets
+      - path: Sources/Sync/WidgetDevice.swift
+    settings:
+      base:
+        PRODUCT_NAME: OpenBatteryWidgets
+        PRODUCT_BUNDLE_IDENTIFIER: cl.franciscosolis.openbattery.widgets
+        INFOPLIST_FILE: Sources/Widgets/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Sources/Widgets/Widgets-iOS.entitlements
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ENABLE_HARDENED_RUNTIME: NO
+        SKIP_INSTALL: YES
+      configs:
+        Release:
+          PROVISIONING_PROFILE_SPECIFIER: "match AppStore cl.franciscosolis.openbattery.widgets ios"
+
+  OpenBatteryWidgetsMac:
+    type: app-extension
+    platform: macOS
+    sources:
+      - Sources/Widgets
+      - path: Sources/Sync/WidgetDevice.swift
+    settings:
+      base:
+        PRODUCT_NAME: OpenBatteryWidgets
+        PRODUCT_BUNDLE_IDENTIFIER: cl.franciscosolis.openbattery.widgets
+        INFOPLIST_FILE: Sources/Widgets/Info.plist
+        # Sandboxed but without the App Group, like the app's Debug build:
+        # a group.-prefixed group needs a profile, and Debug signs without one.
+        CODE_SIGN_ENTITLEMENTS: Sources/Widgets/Widgets-macOS-Debug.entitlements
+        SKIP_INSTALL: YES
+      configs:
+        Release-Direct:
+          CODE_SIGN_ENTITLEMENTS: Sources/Widgets/Widgets-macOS.entitlements
+          PROVISIONING_PROFILE_SPECIFIER: "match Direct cl.franciscosolis.openbattery.widgets macos"
 
 schemes:
   OpenBattery:
