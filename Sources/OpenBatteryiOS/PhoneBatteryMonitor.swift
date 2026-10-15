@@ -43,14 +43,16 @@ final class PhoneBatteryMonitor {
     }
 
     /// Reads the battery and hands it to iCloud. `CloudStore` spaces records
-    /// out itself, so calling this on every notification costs nothing.
-    func refresh() {
+    /// out itself, so calling this on every notification costs nothing;
+    /// `force` skips that spacing, for Sync Now.
+    func refresh(force: Bool = false) {
         snapshot = Self.read()
         thermalState = ProcessInfo.processInfo.thermalState
+        LiveLink.shared.broadcast(snapshot)
         #if !targetEnvironment(simulator)
         // The simulator's reading is made up (see `read`), and a simulator
         // signed into iCloud would show it on the person's real Mac.
-        CloudStore.shared.publish(snapshot, for: .current)
+        CloudStore.shared.publish(snapshot, for: .current, force: force)
         #endif
     }
 

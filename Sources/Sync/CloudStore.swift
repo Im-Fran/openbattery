@@ -35,6 +35,9 @@ final class CloudStore {
     private static let log = Logger(subsystem: "cl.franciscosolis.openbattery", category: "sync")
 
     init(inMemory: Bool = false) {
+        // Listening before the store opens: the mirror's first setup and
+        // export run right away, and a failure there is the one to show.
+        _ = CloudSync.shared
         let schema = Schema([BatteryRecord.self])
         do {
             // Named: the Direct build is not sandboxed, so an unnamed store
@@ -53,11 +56,12 @@ final class CloudStore {
     }
 
     /// Records `snapshot` unless one was recorded for the same device moments
-    /// ago. Safe to call on every refresh.
-    func publish(_ snapshot: BatterySnapshot, for device: SyncDevice, at now: Date = .now) {
+    /// ago. Safe to call on every refresh. `force` skips the spacing, for a
+    /// person asking to sync right now.
+    func publish(_ snapshot: BatterySnapshot, for device: SyncDevice, at now: Date = .now, force: Bool = false) {
         guard snapshot.isPresent else { return }
         let previous = lastPublished[device.id]
-        guard Self.shouldRecord(snapshot, previous: previous, now: now) else { return }
+        guard force || Self.shouldRecord(snapshot, previous: previous, now: now) else { return }
         lastPublished[device.id] = (now, snapshot)
 
         let context = container.mainContext
@@ -81,6 +85,18 @@ final class CloudStore {
         return old.isCharging != snapshot.isCharging
             || old.isPluggedIn != snapshot.isPluggedIn
             || abs(old.percentage - snapshot.percentage) >= 5
+    }
+
+    /// Removes every reading of one device, here and, through the mirror, in
+    /// iCloud. A device that is still running publishes again on its next read.
+    func deleteHistory(of deviceID: String) throws {
+        let context = container.mainContext
+        // One by one rather than `delete(model:where:)`: a batch delete skips
+        // the context, so an open @Query would keep listing the device.
+        let records = try context.fetch(FetchDescriptor<BatteryRecord>(predicate: #Predicate { $0.deviceID == deviceID }))
+        records.forEach(context.delete)
+        try context.save()
+        lastPublished[deviceID] = nil
     }
 
     private func pruneIfDue(_ context: ModelContext, now: Date) {

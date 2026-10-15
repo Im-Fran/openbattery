@@ -32,6 +32,103 @@ final class SyncTests: XCTestCase {
         XCTAssertEqual(record.device, mac)
     }
 
+    // MARK: Synced data
+
+    func testSummariesCountEachDeviceAndKeepItsLatestName() {
+        let renamed = SyncDevice(id: "mac", name: "Work Mac", model: "Mac15,7")
+        let phone = SyncDevice(id: "phone", name: "iPhone", model: "iPhone17,1")
+        let records = [
+            BatteryRecord(device: mac, snapshot: snap(50), date: t0),
+            BatteryRecord(device: phone, snapshot: snap(90), date: t0.addingTimeInterval(60)),
+            BatteryRecord(device: renamed, snapshot: snap(40), date: t0.addingTimeInterval(120)),
+        ]
+        let summaries = SyncedHistory.summaries(from: records)
+        XCTAssertEqual(summaries.map(\.id), ["mac", "phone"])
+        XCTAssertEqual(summaries[0].device.name, "Work Mac")
+        XCTAssertEqual(summaries[0].count, 2)
+        XCTAssertEqual(summaries[0].oldest, t0)
+        XCTAssertEqual(summaries[0].newest, t0.addingTimeInterval(120))
+    }
+
+    // MARK: Live link
+
+    func testLiveMessagesSurviveSplitReads() throws {
+        let one = LiveMessage(id: "mac", name: "MacBook", model: "Mac15,7", snapshot: snap(40))
+        let two = LiveMessage(id: "phone", name: "iPhone", model: "iPhone17,1", snapshot: snap(90, charging: true))
+        let wire = try LiveMessage.frame(one) + LiveMessage.frame(two)
+        let cut = wire.count - 5
+
+        var buffer = Data(wire.prefix(cut))
+        XCTAssertEqual(LiveMessage.unframe(&buffer), [one])
+        buffer += wire.suffix(from: cut)
+        XCTAssertEqual(LiveMessage.unframe(&buffer), [two])
+        XCTAssertTrue(buffer.isEmpty)
+
+        var garbage = Data("not json\n".utf8)
+        XCTAssertEqual(LiveMessage.unframe(&garbage), [])
+    }
+
+    func testLiveReadingsReplaceSyncedOnes() {
+        let phone = SyncDevice(id: "phone", name: "iPhone", model: "iPhone17,1")
+        let synced = [SyncedDevice(device: mac, date: t0, snapshot: snap(50)),
+                      SyncedDevice(device: phone, date: t0, snapshot: snap(80))]
+        let live = [SyncedDevice(device: mac, date: t0.addingTimeInterval(600), snapshot: snap(45), isLive: true),
+                    SyncedDevice(device: SyncDevice(id: "new", name: "iPad", model: "iPad16,3"),
+                                 date: t0, snapshot: snap(70), isLive: true)]
+        let result = SyncedDevice.overlaying(live, on: synced)
+        XCTAssertEqual(result.map(\.id), ["new", "mac", "phone"])
+        XCTAssertEqual(result.first { $0.id == "mac" }?.snapshot.percentage, 45)
+        XCTAssertEqual(result.map(\.isLive), [true, true, false])
+    }
+
+    // MARK: Relayed power and health
+
+    func testListedKeepsTheMacsReadingBesideThePhonesOwn() {
+        var health = snap(40, charging: true, plugged: true)
+        health.cycleCount = 312
+        health.volts = 4.1
+        let phone = SyncDevice(id: "phone", name: "iPhone", model: "iPhone17,1")
+        let records = [
+            BatteryRecord(device: phone, snapshot: snap(60), date: t0.addingTimeInterval(600)),
+            BatteryRecord(device: SyncDevice(id: "phone", name: "iPhone", model: "iPhone17,1", relayedBy: "MacBook"),
+                          snapshot: health, date: t0),
+        ]
+        let listed = SyncedDevice.listed(records: records, live: [], liveRelayed: [:])
+        XCTAssertEqual(listed.count, 1)
+        XCTAssertEqual(listed[0].relayedReading?.mac, "MacBook")
+        // Power and health from the Mac, charge from the phone's newer record.
+        let combined = listed[0].combinedSnapshot
+        XCTAssertEqual(combined.volts, 4.1)
+        XCTAssertEqual(combined.cycleCount, 312)
+        XCTAssertEqual(combined.percentage, 60)
+        XCTAssertFalse(combined.isCharging)
+
+        // A Mac nearby that just read it wins over the older one in iCloud.
+        var fresher = health
+        fresher.volts = 4.3
+        let live = RelayedReading(mac: "Studio", date: t0.addingTimeInterval(900), snapshot: fresher)
+        let relisted = SyncedDevice.listed(records: records, live: [], liveRelayed: ["phone": live])
+        XCTAssertEqual(relisted[0].relayedReading?.mac, "Studio")
+        XCTAssertEqual(relisted[0].combinedSnapshot.volts, 4.3)
+    }
+
+    func testRelayedReadingGoesStaleAfterFiveMinutes() {
+        let reading = RelayedReading(mac: "MacBook", date: t0, snapshot: snap(50))
+        XCTAssertFalse(reading.isStale(at: t0.addingTimeInterval(RelayedReading.freshness)))
+        XCTAssertTrue(reading.isStale(at: t0.addingTimeInterval(RelayedReading.freshness + 1)))
+    }
+
+    /// A build from before relayed readings and read requests still talks to
+    /// this one.
+    func testLiveMessageFromAnOlderBuildStillDecodes() throws {
+        let old = LiveMessage(id: "mac", name: "MacBook", model: "Mac15,7", snapshot: snap(40))
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(old)) as! [String: Any]
+        json["relayed"] = nil
+        json["wantsReading"] = nil
+        var buffer = try JSONSerialization.data(withJSONObject: json) + Data([0x0A])
+        XCTAssertEqual(LiveMessage.unframe(&buffer), [old])
+    }
+
     // MARK: Device list
 
     func testLatestKeepsTheNewestPerDeviceNewestFirst() {
@@ -56,13 +153,45 @@ final class SyncTests: XCTestCase {
     }
 
     func testRelayedMatchesOnModelOnlyWhenAMacReadIt() {
-        let own = SyncedDevice(device: SyncDevice(id: "a", name: "iPhone", model: "iPhone17,1"),
-                               date: t0, snapshot: snap(60))
+        let phone = SyncDevice(id: "a", name: "iPhone", model: "iPhone17,1")
+        let own = SyncedDevice(device: phone, date: t0, snapshot: snap(60))
         let relayed = SyncedDevice(device: SyncDevice(id: "udid", name: "iPhone", model: "iPhone17,1", relayedBy: "mac"),
                                    date: t0, snapshot: snap(60))
-        XCTAssertEqual(SyncedDevice.relayed(matching: "iPhone17,1", in: [own, relayed])?.id, "udid")
-        XCTAssertNil(SyncedDevice.relayed(matching: "iPhone17,1", in: [own]))
-        XCTAssertNil(SyncedDevice.relayed(matching: "iPhone16,2", in: [relayed]))
+        XCTAssertEqual(SyncedDevice.relayed(for: phone, in: [own, relayed])?.id, "udid")
+        XCTAssertNil(SyncedDevice.relayed(for: phone, in: [own]))
+        let other = SyncDevice(id: "b", name: "iPhone", model: "iPhone16,2")
+        XCTAssertNil(SyncedDevice.relayed(for: other, in: [relayed]))
+    }
+
+    /// Once a Mac knows the phone's own ID, its reading is filed under it: the
+    /// two share an ID, list once, and the ID wins over a same-model stranger.
+    func testRelayedUnderThePhonesOwnIDListsOnce() {
+        var health = snap(40)
+        health.cycleCount = 312
+        let phone = SyncDevice(id: "phone", name: "iPhone", model: "iPhone17,1")
+        let stranger = BatteryRecord(device: SyncDevice(id: "x", name: "Other", model: "iPhone17,1", relayedBy: "mac"),
+                                     snapshot: snap(10), date: t0.addingTimeInterval(120))
+        let records = [
+            BatteryRecord(device: phone, snapshot: snap(60), date: t0.addingTimeInterval(60)),
+            BatteryRecord(device: SyncDevice(id: "phone", name: "iPhone", model: "iPhone17,1", relayedBy: "mac"),
+                          snapshot: health, date: t0),
+            stranger,
+        ]
+        let latest = SyncedDevice.latest(from: records)
+        XCTAssertEqual(latest.count, 3)
+        XCTAssertEqual(SyncedDevice.relayed(for: phone, in: latest)?.snapshot.cycleCount, 312)
+
+        let merged = SyncedDevice.merged(latest)
+        XCTAssertEqual(merged.map(\.id), ["x", "phone"])
+        XCTAssertEqual(merged[1].snapshot.percentage, 60)
+        XCTAssertEqual(merged[1].snapshot.cycleCount, 312)
+    }
+
+    func testRelayedIDHidesTheUDID() {
+        let id = SyncDevice.relayedID(udid: "00008140-001A006A02E3001C")
+        XCTAssertEqual(id.count, 32)
+        XCTAssertFalse(id.contains("00008140"))
+        XCTAssertEqual(id, SyncDevice.relayedID(udid: "00008140-001A006A02E3001C"))
     }
 
     /// The phone's own entry stays and borrows the health only a Mac can read.
@@ -109,6 +238,19 @@ final class SyncTests: XCTestCase {
 
         store.publish(snap(49), for: mac, at: t0.addingTimeInterval(CloudStore.minimumSpacing))
         XCTAssertEqual(try store.container.mainContext.fetchCount(FetchDescriptor<BatteryRecord>()), 2)
+    }
+
+    func testForcePublishSkipsSpacingAndDeleteClearsOneDevice() throws {
+        let store = CloudStore(inMemory: true)
+        let phone = SyncDevice(id: "phone", name: "iPhone", model: "iPhone17,1")
+        store.publish(snap(50), for: mac, at: t0)
+        store.publish(snap(50), for: mac, at: t0.addingTimeInterval(60), force: true)
+        store.publish(snap(90), for: phone, at: t0)
+        let context = store.container.mainContext
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<BatteryRecord>()), 3)
+
+        try store.deleteHistory(of: mac.id)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<BatteryRecord>()).map(\.deviceID), ["phone"])
     }
 
     func testPublishIgnoresAMissingBattery() throws {

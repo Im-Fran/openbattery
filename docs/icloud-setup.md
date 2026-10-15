@@ -97,6 +97,16 @@ saves fail and nothing syncs.
 CloudKit Console → the container → **Deploy Schema Changes…** → review →
 Deploy.
 
+**Check every field before deploying.** Development creates a field only when a
+record is saved with a value in it, so an optional property that has only ever
+been nil is missing from the schema. `relayedBy` is one: it is set only on a
+reading a Mac took of an iPhone. If it never happened in Development, Production
+rejects those records with "Cannot create or modify field 'CD_relayedBy'". Add
+any missing field by hand in Development (Schema → Record Types →
+`CD_BatteryRecord`), then deploy. The full list is `CD_date` (Date/Time),
+`CD_deviceID`, `CD_deviceModel`, `CD_deviceName`, `CD_entityName`,
+`CD_relayedBy` (String), `CD_payload` (Bytes) and `CD_percentage` (Int(64)).
+
 Production schemas are additive: record types and fields can be added later
 but never removed or renamed. Every model change that adds a property means
 running a development build once more and deploying again before the release

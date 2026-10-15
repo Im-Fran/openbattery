@@ -19,7 +19,8 @@ struct ThisDeviceView: View {
         let snapshot = monitor.snapshot
         // Sorted newest first, so the first match is this device's last save.
         let lastSaved = records.first { $0.deviceID == device.id }?.date
-        let relayed = SyncedDevice.relayed(matching: device.model, in: SyncedDevice.latest(from: records))
+        let relayed = Self.freshest(SyncedDevice.relayed(for: device, in: SyncedDevice.latest(from: records)),
+                                    LiveLink.shared.relayed[device.id])
 
         NavigationStack {
             List {
@@ -65,6 +66,18 @@ struct ThisDeviceView: View {
                 }
             }
             .scrollDismissesKeyboard(.interactively)
+            // While this screen is up and a Mac is nearby, keep the health a
+            // Mac reads within its five minutes: ask whenever it has gone stale.
+            // Restarted whenever a fresher reading lands, so `relayed` here is
+            // always the current one.
+            .task(id: relayed?.date) {
+                while !Task.isCancelled {
+                    if relayed?.isStale() ?? true, !LiveLink.shared.peers.isEmpty {
+                        LiveLink.shared.requestReading()
+                    }
+                    try? await Task.sleep(for: .seconds(60))
+                }
+            }
             .trackingICloudAccount($iCloudOn)
             .navigationTitle(device.name)
         }
@@ -72,9 +85,17 @@ struct ThisDeviceView: View {
 
     static let iCloudOffFooter = "Sign in to iCloud in Settings to see your other devices."
 
+    /// The newer of what iCloud holds and what a Mac nearby just shared.
+    static func freshest(_ synced: SyncedDevice?, _ live: RelayedReading?) -> RelayedReading? {
+        let fromCloud = synced.flatMap { synced in
+            synced.device.relayedBy.map { RelayedReading(mac: $0, date: synced.date, snapshot: synced.snapshot) }
+        }
+        return [fromCloud, live].compactMap { $0 }.max { $0.date < $1.date }
+    }
+
     @ViewBuilder
-    private func healthSection(_ relayed: SyncedDevice?) -> some View {
-        if let relayed, let mac = relayed.device.relayedBy {
+    private func healthSection(_ relayed: RelayedReading?) -> some View {
+        if let relayed {
             let health = relayed.snapshot
             Section {
                 ThisDeviceRow("Maximum Capacity", symbol: "heart", value: Fmt.percent(health.healthPercent, decimals: 0))
@@ -84,7 +105,7 @@ struct ThisDeviceView: View {
             } header: {
                 Text("Battery Health")
             } footer: {
-                Text("Read by \(mac) \(Fmt.relative(relayed.date)).")
+                StaleReadingFooter(reading: relayed)
             }
         } else {
             Section("Battery Health") {

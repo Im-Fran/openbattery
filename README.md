@@ -55,6 +55,14 @@ which macOS now handles itself (see [below](#-how-the-charge-limit-works)).
 - **iPhone and iPad app** — the same readings on the phone, synced through
   your own iCloud, so the Mac sees the phone and the phone sees the Mac from
   anywhere. See [below](#-the-iphone-and-ipad-app).
+- **Live on the same network** — while the apps are open, your Macs, iPhones
+  and iPads on one network find each other and update each other's battery the
+  moment it changes, without waiting for iCloud. See
+  [below](#live-on-the-same-network).
+- **iCloud in Settings** — whether sync is working, when it last ran, a
+  **Sync Now** button, and what iCloud holds for each device, with a way to
+  delete a device's history. On the Mac under Settings → **iCloud**, on the
+  phone in the **Settings** tab.
 - **Charge limit guide** — one click to macOS's own Charge Limit setting.
 - **Launch at login** — via `SMAppService`, toggled from the popover.
 
@@ -110,13 +118,16 @@ empty.
 
 ## 📱 The iPhone and iPad app
 
-`OpenBatteryiOS` is a small companion with two tabs:
+`OpenBatteryiOS` is a small companion with three tabs:
 
 - **This iPhone / This iPad** — the device's own charge, charging state, Low
   Power Mode and thermal state. It records a reading whenever the app comes
   forward and on background refresh, whenever iOS grants one.
 - **Devices** — every Mac, iPhone and iPad on your iCloud account that runs
-  OpenBattery, with its latest reading and history.
+  OpenBattery, with its latest reading and history. Devices on the same
+  network show **Live** instead of when they were last seen.
+- **Settings** — iCloud sync status, **Sync Now**, the synced data per device,
+  and which devices are connected live nearby.
 
 Sync goes through the private CloudKit database of your iCloud account
 (SwiftData mirroring), so the devices do not need to share a network, a cable
@@ -135,6 +146,21 @@ The Mac side syncs only in the notarized direct build; a Debug build has no
 iCloud entitlement and keeps its readings local. Setting up the iCloud
 container is a one-time job on the Apple Developer portal, described in
 [docs/icloud-setup.md](docs/icloud-setup.md).
+
+### Live on the same network
+
+iCloud is the way across networks, but a reading only travels when the store
+syncs. While both apps are open, they also talk directly: each advertises
+`_openbattery._tcp` over Bonjour, finds the others, and sends its reading the
+moment it changes. The phone has to be in the foreground; the Mac only has to be
+running.
+
+Only your own devices get in. Connections are TLS with a pre-shared key that one
+of your devices creates and **iCloud Keychain** syncs to the rest, so a device
+on another Apple Account sees a service name on the network and nothing more.
+That means iCloud Keychain has to be on, and the first time iOS asks for
+permission to use the local network. A Debug Mac build has no keychain group to
+share the key through, so it stays off there.
 
 ### Building it
 
@@ -161,6 +187,7 @@ iCloud.
 | Data | IOKit — `IORegistryEntryCreateCFProperty`, `IOPSNotificationCreateRunLoopSource` |
 | Devices | usbmuxd and lockdown over [SwiftNIO](https://github.com/apple/swift-nio) and [NIOSSL](https://github.com/apple/swift-nio-ssl) |
 | Sync | SwiftData mirrored to a private CloudKit database |
+| Live link | Network.framework: Bonjour discovery, TLS with a pre-shared key from iCloud Keychain |
 | Login item | ServiceManagement (`SMAppService`) |
 | Project generation | [XcodeGen](https://github.com/yonaskolb/XcodeGen) from `project.yml` |
 | Tests | XCTest |
@@ -424,7 +451,7 @@ Sources/OpenBattery/
     DeviceMonitor.swift         the device list and the selected reading
   Views/                        menu bar label, popover, info window, device picker
 Sources/OpenBatteryiOS/         the iPhone and iPad app: this device, and all devices
-Sources/Sync/                   the iCloud store both apps read and write
+Sources/Sync/                   the iCloud store, its status, and the live link both apps share
 docs/icloud-setup.md            one-time iCloud setup on the Apple Developer portal
 Tests/                          decoding, framing, deadlines, menu bar configuration
 ```

@@ -83,7 +83,8 @@ struct BatteryInfoView: View {
         switch devices.source {
         case .mac: return monitor.snapshot
         case .device: return devices.snapshot
-        case .cloud: return selectedCloud?.snapshot
+        // The device's own charge with the power and health a Mac last read.
+        case .cloud: return selectedCloud?.combinedSnapshot
         }
     }
 
@@ -111,13 +112,17 @@ struct BatteryInfoView: View {
     /// The picker's iCloud group. A device that is plugged in right now is left
     /// out: it is already listed above with a live reading.
     private var cloudChoices: [SyncedDevice] {
-        synced.filter { cloud in !devices.devices.contains { $0.udid == cloud.id } }
+        synced.filter { cloud in !devices.devices.contains { devices.cloudIDs(for: $0.udid).contains(cloud.id) } }
     }
 
     var body: some View {
         VStack(spacing: 0) {
             DeviceSourcePicker(cloud: cloudChoices)
+            // Every state fills the window: an empty state is only as tall as
+            // its text, and left short the whole stack centres, opening a gap
+            // above the picker.
             content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         // Tall enough for the longest tab, so the window keeps still while
         // tabbing; wide enough for three stat tiles to sit side by side.
@@ -147,14 +152,16 @@ struct BatteryInfoView: View {
             AccessibilityNotification.Announcement("Reading \(name)").post()
         }
         .onChange(of: records, initial: true) { rebuildCloud() }
+        .onChange(of: LiveLink.shared.peers) { rebuildCloud() }
+        .onChange(of: LiveLink.shared.relayed) { rebuildCloud() }
         .onChange(of: devices.source) { rebuildCloud() }
         // Plugging in the device being shown from iCloud swaps in the live
         // reading of the very same device, rather than leaving the picker
         // pointing at an entry that just left its list.
         .onChange(of: devices.devices) { _, connected in
             guard case .cloud(let id) = devices.source,
-                  connected.contains(where: { $0.udid == id }) else { return }
-            devices.source = .device(udid: id)
+                  let match = connected.first(where: { devices.cloudIDs(for: $0.udid).contains(id) }) else { return }
+            devices.source = .device(udid: match.udid)
         }
         .onChange(of: devices.failure) { _, failure in
             guard let failure, let message = failure.errorDescription else { return }
@@ -164,7 +171,9 @@ struct BatteryInfoView: View {
 
     private func rebuildCloud() {
         let thisMac = SyncDevice.current.id
-        synced = SyncedDevice.merged(SyncedDevice.latest(from: records)).filter { $0.id != thisMac }
+        synced = SyncedDevice.listed(records: records, live: Array(LiveLink.shared.peers.values),
+                                     liveRelayed: LiveLink.shared.relayed)
+            .filter { $0.id != thisMac }
         guard case .cloud(let id) = devices.source else { return }
         // Pruned, deleted elsewhere, or folded into its phone's own entry: a
         // selection matching no menu item leaves a blank, possibly disabled
@@ -257,7 +266,6 @@ struct BatteryInfoView: View {
             // Reading a device is a round trip over a cable or the network, so
             // unlike the Mac there is a moment with nothing to show.
             ProgressView("Reading the battery…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

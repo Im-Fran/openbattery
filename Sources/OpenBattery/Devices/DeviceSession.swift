@@ -54,6 +54,19 @@ actor DeviceSession {
         return identity
     }
 
+    /// The device's own OpenBattery's answer to `nonce` on
+    /// `LiveLink.identityPort`, or nil when the app is not open there.
+    func identityToken(nonce: Data) async -> Data? {
+        guard let mux = try? await PlistConnection.connectToUSBMux(group: group) else { return nil }
+        defer { Task { await mux.close() } }
+        do {
+            try await USBMux.connect(mux, deviceID: device.deviceID, port: LiveLink.identityPort)
+            return try await mux.send(["Request": "Identity", "Nonce": nonce])["Token"] as? Data
+        } catch {
+            return nil
+        }
+    }
+
     func close() async {
         await relay?.close()
         relay = nil

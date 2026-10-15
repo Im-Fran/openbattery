@@ -1,0 +1,394 @@
+import CryptoKit
+import Foundation
+import Network
+import Observation
+import OSLog
+import Security
+
+/// Live readings between this person's Macs, iPhones and iPads on the same
+/// network, while the apps are open: no iCloud round trip, no waiting for the
+/// next quarter-hour record.
+///
+/// Every device advertises `_openbattery._tcp` over Bonjour and browses for
+/// the others. Connections are TLS with a pre-shared key that lives in iCloud
+/// Keychain, so only devices on the same Apple Account get past the handshake;
+/// anyone else on the network sees a random service name and nothing more.
+@MainActor
+@Observable
+final class LiveLink {
+    static let shared = LiveLink()
+
+    /// Listed under NSBonjourServices in both Info.plists.
+    static let serviceType = "_openbattery._tcp"
+    /// Where an iPhone or iPad answers a Mac that reaches it through usbmuxd,
+    /// by cable or Wi-Fi, asking which synced device it is. Fixed, because
+    /// usbmuxd connects to a port number, not to a Bonjour name.
+    nonisolated static let identityPort: UInt16 = 52_017
+
+    /// The other devices connected right now, by device ID.
+    private(set) var peers: [String: SyncedDevice] = [:]
+    /// The freshest Mac reading of each device that a Mac nearby has shared,
+    /// by device ID — this one's included, which is how an iPad learns its own
+    /// cycle count from a Mac on the same network.
+    private(set) var relayed: [String: RelayedReading] = [:]
+    /// Called on a Mac when a device nearby asks to be read; see `DeviceHub`.
+    var onReadingRequest: ((SyncDevice) -> Void)?
+
+    private var listener: NWListener?
+    private var browser: NWBrowser?
+    private var connections: [ObjectIdentifier: NWConnection] = [:]
+    /// Which device each connection turned out to be, once it said hello.
+    private var peerIDs: [ObjectIdentifier: String] = [:]
+    /// The service name each outgoing connection was dialled to, so a browse
+    /// update arriving before the hello does not dial the same device again.
+    private var dialed: [ObjectIdentifier: String] = [:]
+    /// Fresh every start rather than the device ID: a name that stayed the same
+    /// on every network would let anyone on them follow this device around.
+    private var serviceName = UUID().uuidString
+    private var identityListener: NWListener?
+    private var buffers: [ObjectIdentifier: Data] = [:]
+    private var key: Data?
+    private var lastSnapshot: BatterySnapshot?
+    /// What this Mac read over usbmuxd, sent along with every message.
+    private var sharing: [String: RelayedReading] = [:]
+
+    nonisolated private static let log = Logger(subsystem: "cl.franciscosolis.openbattery", category: "live")
+
+    private init() {}
+
+    // MARK: Lifecycle
+
+    /// Advertises this device and connects to the others. Safe to call again.
+    func start() {
+        guard listener == nil else { return }
+        guard let key = Self.sharedKey() else {
+            // A Debug Mac build has no keychain access group to share through.
+            Self.log.info("live link off: no shared key")
+            return
+        }
+        self.key = key
+        serviceName = UUID().uuidString
+        let myName = serviceName
+        do {
+            let listener = try NWListener(using: Self.parameters(key: key))
+            // Unique, and it tells the browser which side dials (see `browsed`).
+            listener.service = NWListener.Service(name: myName, type: Self.serviceType)
+            listener.newConnectionHandler = { [weak self] connection in
+                MainActor.assumeIsolated { self?.adopt(connection) }
+            }
+            listener.stateUpdateHandler = { state in
+                if case .failed(let error) = state { Self.log.error("listener failed: \(error, privacy: .public)") }
+            }
+            listener.start(queue: .main)
+            self.listener = listener
+        } catch {
+            Self.log.error("listener not created: \(error, privacy: .public)")
+            return
+        }
+
+        let browser = NWBrowser(for: .bonjour(type: Self.serviceType, domain: nil), using: Self.parameters(key: key))
+        browser.browseResultsChangedHandler = { [weak self] results, _ in
+            MainActor.assumeIsolated { self?.browsed(results, myName: myName) }
+        }
+        browser.start(queue: .main)
+        self.browser = browser
+        #if os(iOS)
+        startIdentityListener()
+        #endif
+    }
+
+    /// Drops every connection; iOS suspends a backgrounded app's sockets anyway.
+    func stop() {
+        listener?.cancel()
+        browser?.cancel()
+        identityListener?.cancel()
+        listener = nil
+        browser = nil
+        identityListener = nil
+        connections.values.forEach { $0.cancel() }
+        connections = [:]
+        peerIDs = [:]
+        dialed = [:]
+        buffers = [:]
+        peers = [:]
+    }
+
+    /// Sends this device's reading to everyone connected, and to whoever
+    /// connects next.
+    func broadcast(_ snapshot: BatterySnapshot) {
+        guard snapshot != lastSnapshot else { return }
+        lastSnapshot = snapshot
+        connections.values.forEach(send)
+    }
+
+    /// Hands a reading this Mac took of another device to everyone nearby.
+    func share(_ reading: RelayedReading, for id: String) {
+        sharing[id] = reading
+        absorb([id: reading])
+        connections.values.forEach(send)
+    }
+
+    /// Asks the Macs nearby to read this device over usbmuxd and share it.
+    func requestReading() {
+        connections.values.forEach { send(to: $0, wantsReading: true) }
+    }
+
+    // MARK: Connections
+
+    private func browsed(_ results: Set<NWBrowser.Result>, myName: String) {
+        for result in results {
+            guard case .service(let name, _, _, _) = result.endpoint,
+                  // Only one side dials, or every pair would connect twice.
+                  name > myName,
+                  !dialed.values.contains(name) else { continue }
+            guard let key else { return }
+            let connection = NWConnection(to: result.endpoint, using: Self.parameters(key: key))
+            dialed[ObjectIdentifier(connection)] = name
+            adopt(connection)
+        }
+    }
+
+    private func adopt(_ connection: NWConnection) {
+        let id = ObjectIdentifier(connection)
+        connections[id] = connection
+        connection.stateUpdateHandler = { [weak self] state in
+            MainActor.assumeIsolated { self?.connection(connection, changedTo: state) }
+        }
+        connection.start(queue: .main)
+    }
+
+    private func connection(_ connection: NWConnection, changedTo state: NWConnection.State) {
+        switch state {
+        case .ready:
+            send(to: connection)
+            receive(on: connection)
+        case .failed(let error):
+            // Most likely a handshake with a device on another key: two that
+            // both made one before iCloud Keychain synced. Re-read and retry.
+            Self.log.info("connection failed: \(error, privacy: .public)")
+            drop(connection)
+            restartIfKeyChanged()
+        case .cancelled:
+            drop(connection)
+        default:
+            break
+        }
+    }
+
+    private func send(to connection: NWConnection) {
+        send(to: connection, wantsReading: false)
+    }
+
+    private func send(to connection: NWConnection, wantsReading: Bool) {
+        guard let lastSnapshot else { return }
+        let me = SyncDevice.current
+        let message = LiveMessage(id: me.id, name: me.name, model: me.model, snapshot: lastSnapshot,
+                                  relayed: sharing.isEmpty ? nil : sharing,
+                                  wantsReading: wantsReading ? true : nil)
+        guard let data = try? LiveMessage.frame(message) else { return }
+        connection.send(content: data, completion: .contentProcessed { _ in })
+    }
+
+    private func receive(on connection: NWConnection) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, isComplete, error in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let id = ObjectIdentifier(connection)
+                if let data {
+                    var buffer = (self.buffers[id] ?? Data()) + data
+                    for message in LiveMessage.unframe(&buffer) { self.received(message, on: id) }
+                    // A peer that never sends a newline does not get to grow
+                    // this without bound.
+                    self.buffers[id] = buffer.count > 256 * 1024 ? Data() : buffer
+                }
+                if isComplete || error != nil {
+                    connection.cancel()
+                } else {
+                    self.receive(on: connection)
+                }
+            }
+        }
+    }
+
+    private func received(_ message: LiveMessage, on id: ObjectIdentifier) {
+        peerIDs[id] = message.id
+        peers[message.id] = SyncedDevice(
+            device: SyncDevice(id: message.id, name: message.name, model: message.model),
+            date: .now, snapshot: message.snapshot, isLive: true)
+        absorb(message.relayed ?? [:])
+        if message.wantsReading == true {
+            onReadingRequest?(SyncDevice(id: message.id, name: message.name, model: message.model))
+        }
+    }
+
+    private func absorb(_ readings: [String: RelayedReading]) {
+        for (id, reading) in readings where reading.date > relayed[id]?.date ?? .distantPast {
+            relayed[id] = reading
+        }
+    }
+
+    private func drop(_ connection: NWConnection) {
+        let id = ObjectIdentifier(connection)
+        connections[id] = nil
+        buffers[id] = nil
+        dialed[id] = nil
+        if let peer = peerIDs.removeValue(forKey: id), !peerIDs.values.contains(peer) {
+            peers[peer] = nil
+        }
+    }
+
+    private func restartIfKeyChanged() {
+        guard let fresh = Self.sharedKey(), fresh != key else { return }
+        stop()
+        start()
+    }
+
+    // MARK: Identity
+
+    /// What this device answers on `identityPort`: its sync ID and the Mac's
+    /// fresh nonce, keyed with the shared secret. A Mac on the same Apple
+    /// Account computes the same for each ID it knows and finds the match. The
+    /// ID never crosses the wire, and with a new nonce every time no answer can
+    /// be replayed or used to recognise the device later.
+    nonisolated static func identityToken(for id: String, nonce: Data) -> Data? {
+        sharedKey().map { key in
+            Data(HMAC<SHA256>.authenticationCode(for: Data("OpenBattery identity \(id)".utf8) + nonce,
+                                                  using: SymmetricKey(data: key)))
+        }
+    }
+
+    /// Which of `ids` sent `token` for `nonce`, if any.
+    nonisolated static func id(answering token: Data, nonce: Data, among ids: some Sequence<String>) -> String? {
+        guard let key = sharedKey() else { return nil }
+        return ids.first { id in
+            HMAC<SHA256>.isValidAuthenticationCode(token, authenticating: Data("OpenBattery identity \(id)".utf8) + nonce,
+                                                   using: SymmetricKey(data: key))
+        }
+    }
+
+    #if os(iOS)
+    /// Answers one challenge per connection, in the framing lockdown uses (a
+    /// big-endian length, then a plist) so the Mac's existing usbmuxd client
+    /// speaks it unchanged. Loopback only: usbmuxd delivers a cabled Mac's
+    /// connection on the device itself, and nothing else needs to reach it.
+    private func startIdentityListener() {
+        let parameters = NWParameters.tcp
+        parameters.requiredInterfaceType = .loopback
+        guard let port = NWEndpoint.Port(rawValue: Self.identityPort),
+              let listener = try? NWListener(using: parameters, on: port) else { return }
+        let id = SyncDevice.current.id
+        listener.newConnectionHandler = { connection in
+            connection.start(queue: .main)
+            // ponytail: expects the whole request in one read, which a plist
+            // of a few hundred bytes over loopback always is.
+            connection.receive(minimumIncompleteLength: 4, maximumLength: 64 * 1024) { data, _, _, _ in
+                guard let reply = data.flatMap({ Self.identityReply(to: $0, id: id) }) else {
+                    connection.cancel()
+                    return
+                }
+                connection.send(content: reply, completion: .contentProcessed { _ in connection.cancel() })
+            }
+        }
+        listener.start(queue: .main)
+        identityListener = listener
+    }
+
+    /// The framed reply to a framed `["Nonce": …]` request; nil for anything
+    /// else, so a malformed or nonce-less request gets no token at all.
+    private nonisolated static func identityReply(to request: Data, id: String) -> Data? {
+        guard request.count > 4 else { return nil }
+        let length = request.prefix(4).reduce(0) { $0 << 8 | Int($1) }
+        guard length == request.count - 4,
+              let plist = try? PropertyListSerialization.propertyList(from: request.dropFirst(4), format: nil)
+                  as? [String: Any],
+              let nonce = plist["Nonce"] as? Data, (16...64).contains(nonce.count),
+              let token = identityToken(for: id, nonce: nonce),
+              let body = try? PropertyListSerialization.data(fromPropertyList: ["Token": token],
+                                                             format: .xml, options: 0) else { return nil }
+        var size = UInt32(body.count).bigEndian
+        return Data(bytes: &size, count: 4) + body
+    }
+    #endif
+
+    // MARK: Security
+
+    /// TLS 1.2 with a pre-shared key, as in Apple's peer-to-peer sample: no
+    /// certificates to manage, and no connection without the key.
+    private static func parameters(key: Data) -> NWParameters {
+        let tls = NWProtocolTLS.Options()
+        let psk = HMAC<SHA256>.authenticationCode(for: Data("OpenBattery live link".utf8), using: SymmetricKey(data: key))
+        let pskData = Data(psk).withUnsafeBytes { DispatchData(bytes: $0) }
+        let identity = Data("OpenBattery".utf8).withUnsafeBytes { DispatchData(bytes: $0) }
+        sec_protocol_options_add_pre_shared_key(tls.securityProtocolOptions,
+                                                pskData as __DispatchData, identity as __DispatchData)
+        sec_protocol_options_append_tls_ciphersuite(tls.securityProtocolOptions,
+                                                    tls_ciphersuite_t(rawValue: UInt16(TLS_PSK_WITH_AES_128_GCM_SHA256))!)
+        let tcp = NWProtocolTCP.Options()
+        // Notices a Mac going to sleep or a phone leaving the network within
+        // seconds, so its "Live" badge does not outlive it.
+        tcp.enableKeepalive = true
+        tcp.keepaliveIdle = 5
+        let parameters = NWParameters(tls: tls, tcp: tcp)
+        parameters.includePeerToPeer = true
+        return parameters
+    }
+
+    /// The key every device on this Apple Account shares, made by whichever
+    /// device got there first and synced by iCloud Keychain. Both apps sign
+    /// with the same App ID, so they share its default access group.
+    nonisolated private static func sharedKey() -> Data? {
+        let item: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "cl.franciscosolis.openbattery.live",
+            kSecAttrAccount as String: "link-key",
+            kSecAttrSynchronizable as String: true,
+            kSecUseDataProtectionKeychain as String: true,
+        ]
+        var result: CFTypeRef?
+        let query = item.merging([kSecReturnData as String: true]) { $1 }
+        if SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data {
+            return data
+        }
+        let fresh = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }
+        let add = item.merging([
+            kSecValueData as String: fresh,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+        ]) { $1 }
+        let status = SecItemAdd(add as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            log.error("shared key not saved: \(status)")
+            return nil
+        }
+        return fresh
+    }
+}
+
+/// One reading on the wire: a line of JSON. JSONEncoder never writes a raw
+/// newline, so the newline is a safe delimiter.
+struct LiveMessage: Codable, Equatable {
+    var id: String
+    var name: String
+    var model: String
+    var snapshot: BatterySnapshot
+    /// Readings the sender, a Mac, took of other devices. Optional on the wire
+    /// so an older build's messages still decode.
+    var relayed: [String: RelayedReading]?
+    /// Asks a Mac to read the sender over usbmuxd and share the result.
+    var wantsReading: Bool?
+
+    static func frame(_ message: LiveMessage) throws -> Data {
+        try JSONEncoder().encode(message) + Data([0x0A])
+    }
+
+    /// Takes every complete line out of `buffer`, leaving a partial one for
+    /// the next read. Lines that do not decode are skipped.
+    static func unframe(_ buffer: inout Data) -> [LiveMessage] {
+        var messages: [LiveMessage] = []
+        while let newline = buffer.firstIndex(of: 0x0A) {
+            let line = buffer[buffer.startIndex..<newline]
+            buffer = Data(buffer[buffer.index(after: newline)...])
+            if let message = try? JSONDecoder().decode(LiveMessage.self, from: line) { messages.append(message) }
+        }
+        return messages
+    }
+}

@@ -8,22 +8,39 @@ import SwiftUI
 struct DeviceDetailView: View {
     @Query private var records: [BatteryRecord]
     @State private var period: Period = .day
+    private let deviceID: String
 
     init(deviceID: String) {
+        self.deviceID = deviceID
         _records = Query(filter: #Predicate<BatteryRecord> { $0.deviceID == deviceID },
                          sort: \BatteryRecord.date)
     }
 
     var body: some View {
-        if let latest = records.last, let snapshot = latest.snapshot {
-            content(latest, snapshot)
+        // The device's own newest record leads; a Mac's reading of it, filed
+        // under the same ID, fills in the power and health it cannot report.
+        if let latest = records.last(where: { $0.relayedBy == nil }) ?? records.last,
+           let own = latest.snapshot {
+            let relayed = latest.relayedBy == nil ? relayedReading : nil
+            let snapshot = SyncedDevice(device: latest.device, date: latest.date, snapshot: own,
+                                        relayedReading: relayed).combinedSnapshot
+            content(latest, snapshot, relayed: relayed)
         } else {
             ContentUnavailableView("No Readings", systemImage: "battery.0percent",
                                    description: Text("This device has not recorded a reading yet."))
         }
     }
 
-    private func content(_ latest: BatteryRecord, _ snapshot: BatterySnapshot) -> some View {
+    /// The newer of a Mac's last reading in iCloud and one a Mac nearby shared.
+    private var relayedReading: RelayedReading? {
+        let fromCloud = records.last(where: { $0.relayedBy != nil }).flatMap { record in
+            record.snapshot.map { RelayedReading(mac: record.relayedBy ?? "", date: record.date, snapshot: $0) }
+        }
+        return [fromCloud, LiveLink.shared.relayed[deviceID]].compactMap { $0 }.max { $0.date < $1.date }
+    }
+
+    private func content(_ latest: BatteryRecord, _ snapshot: BatterySnapshot,
+                         relayed: RelayedReading?) -> some View {
         List {
             Section { Hero(snapshot: snapshot, date: latest.date) }
 
@@ -42,11 +59,23 @@ struct DeviceDetailView: View {
 
             let power = powerRows(snapshot)
             if !power.isEmpty {
-                Section("Power") { rows(power) }
+                Section {
+                    rows(power)
+                } header: {
+                    Text("Power")
+                } footer: {
+                    if let relayed { StaleReadingFooter(reading: relayed) }
+                }
             }
             let health = healthRows(snapshot)
             if !health.isEmpty {
-                Section("Health") { rows(health) }
+                Section {
+                    rows(health)
+                } header: {
+                    Text("Health")
+                } footer: {
+                    if let relayed { StaleReadingFooter(reading: relayed) }
+                }
             }
 
             Section {
@@ -100,6 +129,26 @@ struct DeviceDetailView: View {
             ("Design Capacity", s.designCapacityMAh.map { Fmt.mAh($0) }),
             ("Temperature", s.temperature.map { Fmt.celsius($0) }),
         ].compactMap { label, value in value.map { (label, $0) } }
+    }
+}
+
+/// Who read the power and health and when; past five minutes, a warning
+/// that the numbers are history and how to bring them up to date.
+struct StaleReadingFooter: View {
+    let reading: RelayedReading
+
+    var body: some View {
+        TimelineView(.everyMinute) { context in
+            let read = "Read by \(reading.mac) \(Fmt.relative(reading.date, now: context.date))."
+            if reading.isStale(at: context.date) {
+                // Colour lives on the icon; the words say it on their own.
+                Label("\(read) Out of date: open OpenBattery on that Mac, on the same network, to update it.",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .symbolRenderingMode(.multicolor)
+            } else {
+                Text(read)
+            }
+        }
     }
 }
 
