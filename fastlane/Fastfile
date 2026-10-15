@@ -247,9 +247,10 @@ platform :ios do
     xcargs = [
       "DEVELOPMENT_TEAM=#{TEAM_ID}",
       "CODE_SIGN_STYLE=Manual",
-      "CODE_SIGN_IDENTITY='Apple Distribution'",
-      "PROVISIONING_PROFILE_SPECIFIER='#{profiles.values.first}'"
+      "CODE_SIGN_IDENTITY='Apple Distribution'"
     ]
+    # Each target names its own match profile in project.yml: one specifier
+    # here would sign the widget extension with the app's profile.
     xcargs << "MARKETING_VERSION=#{options[:version]}" if options[:version]
     xcargs << "CURRENT_PROJECT_VERSION=#{options[:build_number]}" if options[:build_number]
 

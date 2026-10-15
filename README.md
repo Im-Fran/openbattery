@@ -59,6 +59,9 @@ which macOS now handles itself (see [below](#-how-the-charge-limit-works)).
   and iPads on one network find each other and update each other's battery the
   moment it changes, without waiting for iCloud. See
   [below](#live-on-the-same-network).
+- **Batteries widget** — the charge of every device on your account on the
+  iPhone and iPad Home and Lock Screens and on the Mac desktop, read from a
+  copy of the device list the apps keep in a shared App Group container.
 - **iCloud in Settings** — whether sync is working, when it last ran, a
   **Sync Now** button, and what iCloud holds for each device, with a way to
   delete a device's history. On the Mac under Settings → **iCloud**, on the
@@ -452,6 +455,7 @@ Sources/OpenBattery/
   Views/                        menu bar label, popover, info window, device picker
 Sources/OpenBatteryiOS/         the iPhone and iPad app: this device, and all devices
 Sources/Sync/                   the iCloud store, its status, and the live link both apps share
+Sources/Widgets/                the Batteries widget, for iOS and macOS
 docs/icloud-setup.md            one-time iCloud setup on the Apple Developer portal
 Tests/                          decoding, framing, deadlines, menu bar configuration
 ```

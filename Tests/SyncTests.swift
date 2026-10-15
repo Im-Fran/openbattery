@@ -129,6 +129,21 @@ final class SyncTests: XCTestCase {
         XCTAssertEqual(LiveMessage.unframe(&buffer), [old])
     }
 
+    // MARK: Widgets
+
+    func testWidgetListsThisDeviceFirstThenByName() {
+        let devices = [
+            SyncedDevice(device: SyncDevice(id: "z", name: "Zeta Mac", model: "Mac15,7"), date: t0, snapshot: snap(10)),
+            SyncedDevice(device: SyncDevice(id: "me", name: "iPhone", model: "iPhone17,1"), date: t0,
+                         snapshot: snap(76, charging: true, plugged: true)),
+            SyncedDevice(device: SyncDevice(id: "a", name: "air", model: "Mac15,7"), date: t0, snapshot: snap(50)),
+        ]
+        let entries = WidgetFeed.entries(devices, currentID: "me")
+        XCTAssertEqual(entries.map(\.id), ["me", "a", "z"])
+        XCTAssertEqual(entries[0].symbol, "iphone")
+        XCTAssertTrue(entries[0].isCharging && entries[0].isCurrent)
+    }
+
     // MARK: Device list
 
     func testLatestKeepsTheNewestPerDeviceNewestFirst() {
