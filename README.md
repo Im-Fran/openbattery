@@ -62,6 +62,8 @@ which macOS now handles itself (see [below](#-how-the-charge-limit-works)).
 - **Batteries widget** — the charge of every device on your account on the
   iPhone and iPad Home and Lock Screens and on the Mac desktop, read from a
   copy of the device list the apps keep in a shared App Group container.
+  **Edit Widget** picks which devices it shows, and in what order — leave it
+  empty for all of them.
 - **iCloud in Settings** — whether sync is working, when it last ran, a
   **Sync Now** button, and what iCloud holds for each device, with a way to
   delete a device's history. On the Mac under Settings → **iCloud**, on the
