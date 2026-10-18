@@ -129,6 +129,31 @@ final class SyncTests: XCTestCase {
         XCTAssertEqual(LiveMessage.unframe(&buffer), [old])
     }
 
+    // MARK: Widgets
+
+    func testWidgetListsThisDeviceFirstThenByName() {
+        let devices = [
+            SyncedDevice(device: SyncDevice(id: "z", name: "Zeta Mac", model: "Mac15,7"), date: t0, snapshot: snap(10)),
+            SyncedDevice(device: SyncDevice(id: "me", name: "iPhone", model: "iPhone17,1"), date: t0,
+                         snapshot: snap(76, charging: true, plugged: true)),
+            SyncedDevice(device: SyncDevice(id: "a", name: "air", model: "Mac15,7"), date: t0, snapshot: snap(50)),
+        ]
+        let entries = WidgetFeed.entries(devices, currentID: "me")
+        XCTAssertEqual(entries.map(\.id), ["me", "a", "z"])
+        XCTAssertEqual(entries[0].symbol, "iphone")
+        XCTAssertTrue(entries[0].isCharging && entries[0].isCurrent)
+    }
+
+    func testWidgetShowsPickedDevicesInPickedOrderOrAllWhenNoneMatch() {
+        let all = ["me", "a", "z"].map {
+            WidgetDevice(id: $0, name: $0, symbol: "iphone", percentage: 50, isCharging: false,
+                         isPluggedIn: false, lowPowerMode: false, date: t0, isCurrent: false)
+        }
+        XCTAssertEqual(WidgetDevice.picked(["z", "gone", "me"], from: all).map(\.id), ["z", "me"])
+        XCTAssertEqual(WidgetDevice.picked(nil, from: all).map(\.id), ["me", "a", "z"])
+        XCTAssertEqual(WidgetDevice.picked(["gone"], from: all).map(\.id), ["me", "a", "z"])
+    }
+
     // MARK: Device list
 
     func testLatestKeepsTheNewestPerDeviceNewestFirst() {
