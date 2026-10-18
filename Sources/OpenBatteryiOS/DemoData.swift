@@ -40,6 +40,9 @@ enum DemoData {
                                               plugged: { hour, _, _ in hour >= 23 || hour < 7 },
                                               snapshot: iPhoneSnapshot))
         try? context.save()
+        // The simulator never publishes its own reading, so without this the
+        // widget would have nothing to show.
+        WidgetFeed.update()
     }
 
     private static func insert(_ device: SyncDevice, into context: ModelContext, _ readings: [(Date, BatterySnapshot)]) {
